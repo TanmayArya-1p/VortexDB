@@ -1,6 +1,7 @@
 use core::{DbError, DenseVector, IndexedVector, PointId, Similarity};
 
 pub mod flat;
+pub mod kd_tree;
 
 pub trait VectorIndex {
     fn insert(&mut self, vector: IndexedVector) -> Result<(), DbError>;
@@ -19,7 +20,7 @@ pub trait VectorIndex {
 }
 
 /// Distance function to get the distance between two vectors (taken from old version)
-pub fn distance(a: DenseVector, b: DenseVector, dist_type: Similarity) -> f32 {
+pub fn distance(a: &DenseVector, b: &DenseVector, dist_type: Similarity) -> f32 {
     assert_eq!(a.len(), b.len());
     match dist_type {
         Similarity::Euclidean => {

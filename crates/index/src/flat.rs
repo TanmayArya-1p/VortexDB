@@ -46,12 +46,7 @@ impl VectorIndex for FlatIndex {
         let mut scores = self
             .index
             .iter()
-            .map(|point| {
-                (
-                    point.id,
-                    distance(point.vector.clone(), query_vector.clone(), similarity),
-                )
-            })
+            .map(|point| (point.id, distance(&point.vector, &query_vector, similarity)))
             .collect::<Vec<_>>();
 
         // Sorting logic according to type of metric used
