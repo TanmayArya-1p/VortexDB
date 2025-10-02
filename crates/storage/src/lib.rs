@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::rocks_db::RocksDbStorage;
 
-pub trait StorageEngine {
+pub trait StorageEngine: Send + Sync {
     fn insert_point(
         &self,
         id: PointId,
