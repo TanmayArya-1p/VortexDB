@@ -54,15 +54,7 @@ impl VectorIndex for FlatIndex {
             })
             .collect::<Vec<_>>();
 
-        // Sorting logic according to type of metric used
-        match similarity {
-            Similarity::Euclidean | Similarity::Manhattan | Similarity::Hamming => {
-                scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-            }
-            Similarity::Cosine => {
-                scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-            }
-        }
+        scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
         Ok(scores
             .into_iter()
