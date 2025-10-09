@@ -1,4 +1,4 @@
-use core::{DbError, DenseVector, IndexedVector, PointId, Similarity};
+use defs::{DbError, DenseVector, IndexedVector, PointId, Similarity};
 
 use crate::{distance, VectorIndex};
 

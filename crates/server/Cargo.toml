@@ -7,6 +7,6 @@ edition = "2021"
 # tokio.workspace = true
 
 api = { path = "../api" }
-core = { path = "../core" }
+defs = { path = "../defs" }
 index = { path = "../index" }
 # storage = { path = "../storage" }

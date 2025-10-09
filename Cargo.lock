@@ -15,7 +15,7 @@ dependencies = [
 name = "api"
 version = "0.1.0"
 dependencies = [
- "core",
+ "defs",
  "index",
  "storage",
  "tempfile",
@@ -129,7 +129,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "core"
+name = "defs"
 version = "0.1.0"
 dependencies = [
  "bincode",
@@ -180,7 +180,7 @@ checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
 name = "index"
 version = "0.1.0"
 dependencies = [
- "core",
+ "defs",
 ]
 
 [[package]]
@@ -436,7 +436,7 @@ name = "server"
 version = "0.1.0"
 dependencies = [
  "api",
- "core",
+ "defs",
  "index",
 ]
 
@@ -451,7 +451,7 @@ name = "storage"
 version = "0.1.0"
 dependencies = [
  "bincode",
- "core",
+ "defs",
  "index",
  "rocksdb",
  "tempfile",

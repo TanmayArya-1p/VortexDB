@@ -1,6 +1,6 @@
-use core::{DbError, IndexedVector, Similarity};
+use defs::{DbError, IndexedVector, Similarity};
 
-use core::{DenseVector, Payload, Point, PointId};
+use defs::{DenseVector, Payload, Point, PointId};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};

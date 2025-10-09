@@ -1,5 +1,5 @@
 use crate::StorageEngine;
-use core::{DbError, DenseVector, Payload, PointId};
+use defs::{DbError, DenseVector, Payload, PointId};
 
 pub struct MemoryStorage {
     // define here how MemoryStorage will be defined

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2" # Use the modern feature resolver
 members = [
-    "crates/core",    # Corresponds to your 'db-core' in earlier discussion
+    "crates/defs",
     "crates/storage",
     "crates/index",
     "crates/server",

@@ -1,4 +1,4 @@
-use core::{DbError, DenseVector, Payload, PointId};
+use defs::{DbError, DenseVector, Payload, PointId};
 use std::path::PathBuf;
 use std::sync::Arc;
 

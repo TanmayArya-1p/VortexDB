@@ -2,7 +2,7 @@
 
 use crate::StorageEngine;
 use bincode::{deserialize, serialize};
-use core::{DbError, DenseVector, Payload, Point, PointId};
+use defs::{DbError, DenseVector, Payload, Point, PointId};
 use rocksdb::{Error, Options, DB};
 use std::path::PathBuf;
 

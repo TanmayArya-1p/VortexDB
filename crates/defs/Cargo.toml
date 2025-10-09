@@ -1,7 +1,7 @@
-# crates/core/Cargo.toml
+# crates/defs/Cargo.toml
 
 [package]
-name="core"
+name="defs"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
