@@ -1,4 +1,4 @@
-use defs::{DbError, DenseVector, IndexedVector, PointId, Similarity};
+use defs::{DbError, DenseVector, DistanceOrderedVector, IndexedVector, PointId, Similarity};
 
 use crate::{distance, VectorIndex};
 
@@ -43,24 +43,31 @@ impl VectorIndex for FlatIndex {
         similarity: Similarity,
         k: usize,
     ) -> Result<Vec<PointId>, DbError> {
-        let mut scores = self
+        let scores = self
             .index
             .iter()
-            .map(|point| {
-                (
-                    point.id,
-                    distance(point.vector.clone(), query_vector.clone(), similarity),
-                )
+            .map(|point| DistanceOrderedVector {
+                distance: distance(point.vector.clone(), query_vector.clone(), similarity),
+                query_vector: &query_vector,
+                point_id: Some(point.id),
             })
             .collect::<Vec<_>>();
 
-        scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-
-        Ok(scores
+        // select k smallest elements in scores using a max heap
+        let mut heap = std::collections::BinaryHeap::<DistanceOrderedVector>::new();
+        for score in scores {
+            if heap.len() < k {
+                heap.push(score);
+            } else if score < *heap.peek().unwrap() {
+                heap.pop();
+                heap.push(score);
+            }
+        }
+        Ok(heap
+            .into_sorted_vec()
             .into_iter()
-            .take(k)
-            .map(|(id, _)| id)
-            .collect::<Vec<_>>())
+            .map(|v| v.point_id.unwrap())
+            .collect())
     }
 }
 
