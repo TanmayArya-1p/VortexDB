@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::ops::Index;
 
 pub type PointId = u64;
 
@@ -53,21 +52,21 @@ pub struct DistanceOrderedVector<'q> {
     pub point_id: Option<PointId>,
 }
 
+impl<'q> Ord for DistanceOrderedVector<'q> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.distance.total_cmp(&other.distance)
+    }
+}
+
 impl<'q> PartialOrd for DistanceOrderedVector<'q> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.distance.partial_cmp(&other.distance)
+        Some(self.cmp(other))
     }
 }
 
 impl<'q> PartialEq for DistanceOrderedVector<'q> {
     fn eq(&self, other: &Self) -> bool {
         self.distance == other.distance
-    }
-}
-
-impl<'q> Ord for DistanceOrderedVector<'q> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.distance.partial_cmp(&other.distance).unwrap()
     }
 }
 
