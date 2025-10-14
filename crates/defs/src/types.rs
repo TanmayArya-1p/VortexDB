@@ -45,6 +45,7 @@ pub enum Similarity {
 }
 
 // Struct which stores the distance between a vector and query vector and implements ordering traits
+#[derive(Copy, Clone)]
 pub struct DistanceOrderedVector<'q> {
     // 'q : lifetime of query vector
     pub distance: f32,

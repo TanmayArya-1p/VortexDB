@@ -42,7 +42,7 @@ pub fn distance(a: DenseVector, b: DenseVector, dist_type: Similarity) -> f32 {
             let score: Vec<f32> = a
                 .iter()
                 .zip(b.iter())
-                .map(|(&x, &y)| (if (x - y) > 1e-8 { 1f32 } else { 0f32 }))
+                .map(|(&x, &y)| (if (x - y).abs() > 1e-8 { 1f32 } else { 0f32 }))
                 .collect();
             score.iter().sum::<f32>()
         }
