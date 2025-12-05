@@ -19,15 +19,27 @@ fn generate_point_id() -> u64 {
 pub struct VectorDb {
     storage: Arc<dyn StorageEngine>,
     index: Arc<RwLock<dyn VectorIndex>>, // Using a RwLock instead of Mutex to improve concurrency
+    dimension: usize,
 }
 
 impl VectorDb {
-    fn _new(storage: Arc<dyn StorageEngine>, index: Arc<RwLock<dyn VectorIndex>>) -> Self {
-        Self { storage, index }
+    fn _new(
+        storage: Arc<dyn StorageEngine>,
+        index: Arc<RwLock<dyn VectorIndex>>,
+        dimension: usize,
+    ) -> Self {
+        Self {
+            storage,
+            index,
+            dimension,
+        }
     }
 
     //TODO: Make this an atomic operation
     pub fn insert(&self, vector: DenseVector, payload: Payload) -> Result<PointId, DbError> {
+        if vector.len() != self.dimension {
+            return Err(DbError::DimensionMismatch);
+        }
         // Generate a new point id
         let point_id = generate_point_id();
         self.storage
@@ -44,13 +56,13 @@ impl VectorDb {
     }
 
     //TODO: Make this an atomic operation
-    pub fn delete(&self, id: PointId) -> Result<(), DbError> {
+    pub fn delete(&self, id: PointId) -> Result<bool, DbError> {
         // Remove from storage
         self.storage.delete_point(id)?;
         // Remove from index
         let mut index = self.index.write().map_err(|_| DbError::LockError)?;
-        index.delete(id)?;
-        Ok(())
+        let point_found = index.delete(id)?;
+        Ok(point_found)
     }
 
     pub fn get(&self, id: PointId) -> Result<Option<Point>, DbError> {
@@ -105,7 +117,7 @@ pub fn init_api(config: DbConfig) -> Result<VectorDb, DbError> {
     };
 
     // Init the db
-    let db = VectorDb::_new(storage, index);
+    let db = VectorDb::_new(storage, index, config.dimension);
 
     Ok(db)
 }
@@ -148,6 +160,22 @@ mod tests {
     }
 
     #[test]
+    fn test_dimension_mismatch() {
+        let db = create_test_db();
+        let v1 = vec![1.0, 2.0, 3.0];
+        let v2 = vec![1.0, 2.0];
+        let payload = Payload {};
+
+        let res1 = db.insert(v1, payload);
+        assert!(res1.is_ok());
+
+        // Insert vector of dimension 2 != 3
+        let res2 = db.insert(v2, payload);
+        assert!(res2.is_err());
+        assert_eq!(res2.unwrap_err(), DbError::DimensionMismatch);
+    }
+
+    #[test]
     fn test_delete() {
         let db = create_test_db();
         let vector = vec![1.0, 2.0, 3.0];
@@ -156,6 +184,12 @@ mod tests {
         // Insert a point
         let id = db.insert(vector, payload).unwrap();
 
+        // try deleting a point that does not exist
+        let found = db.delete(id + 1);
+        assert!(found.is_ok());
+        assert!(!found.unwrap());
+
+        // delete the point
         assert!(db.get(id).unwrap().is_some());
         db.delete(id).unwrap();
         assert!(db.get(id).unwrap().is_none());

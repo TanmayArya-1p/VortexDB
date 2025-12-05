@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package vectordb;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/empty.proto";
+
+
+service VectorDB {
+  //Insert a vector with a payload and return the assigned PointID
+  rpc InsertVector(InsertVectorRequest) returns (PointID) {}
+
+  //Delete a vector by its PointID
+  rpc DeletePoint(PointID) returns (google.protobuf.Empty) {}
+
+  //Get a vector and its payload by PointID
+  rpc GetPoint(PointID) returns (Point) {}
+
+  //Search for the k nearest vectors to a target vector given a distance function
+  rpc SearchPoints(SearchRequest) returns (SearchResponse) {}
+}
+
+
+message InsertVectorRequest {
+  DenseVector vector = 1;
+  optional google.protobuf.Struct payload = 2;
+}
+
+
+message SearchRequest {
+  DenseVector query_vector = 1;
+  Similarity similarity = 2;
+  int64 limit = 3;
+}
+
+
+message SearchResponse {
+  repeated PointID result_point_ids = 1;
+}
+
+message DenseVector {
+  repeated float values = 1;
+}
+
+message Point {
+  PointID id = 1;
+  optional google.protobuf.Struct payload = 2;
+  DenseVector vector = 3;
+}
+
+message PointID {
+  uint64 id = 1;
+}
+
+enum Similarity{
+  Euclidean = 0;
+  Manhattan = 1;
+  Hamming = 2;
+  Cosine = 3;
+}
