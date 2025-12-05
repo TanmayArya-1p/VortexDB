@@ -7,6 +7,7 @@ use api;
 use api::DbConfig;
 use index::IndexType;
 use prost_types::Struct;
+use std::net::SocketAddr;
 use storage::StorageType;
 use tempfile::tempdir;
 use tokio;
@@ -14,12 +15,7 @@ use tonic::transport::Channel;
 
 // Inspired from https://github.com/hyperium/tonic/discussions/924#discussioncomment-9854088
 
-// TODO: figure out a way to either:
-// - assign different ports for different tests; when cargo test is run with multiple threads -> address in use error
-// - use a shared instance of the server
-// currently tests must be run with --test-threads=1
-
-async fn start_test_server() -> Result<(), Box<dyn std::error::Error>> {
+async fn start_test_server() -> Result<SocketAddr, Box<dyn std::error::Error>> {
     // using a temporary directory for db datapath
     let temp_dir = tempdir().unwrap();
 
@@ -31,7 +27,7 @@ async fn start_test_server() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let config = GRPCServerConfig {
-        addr: "127.0.0.1:8080".parse()?,
+        addr: "127.0.0.1:0".parse()?,
         root_password: "123".to_string(),
         logging: false,
         db_config,
@@ -45,6 +41,7 @@ async fn start_test_server() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let listener = tokio::net::TcpListener::bind(config.addr).await?;
+    let listener_addr = listener.local_addr()?;
 
     tokio::spawn(async move {
         let _ = run_server(
@@ -56,11 +53,14 @@ async fn start_test_server() -> Result<(), Box<dyn std::error::Error>> {
         .inspect_err(|err| panic!("Could not start test server : {:?}", err));
     });
 
-    Ok(())
+    Ok(listener_addr)
 }
 
-async fn create_test_client() -> Result<VectorDbClient<Channel>, Box<dyn std::error::Error>> {
-    let channel = tonic::transport::Channel::from_static("http://127.0.0.1:8080")
+async fn create_test_client(
+    server_addr: SocketAddr,
+) -> Result<VectorDbClient<Channel>, Box<dyn std::error::Error>> {
+    let channel = Channel::from_shared(format!("http://{}", server_addr))
+        .unwrap()
         .connect()
         .await?;
     Ok(VectorDbClient::new(channel))
@@ -68,8 +68,8 @@ async fn create_test_client() -> Result<VectorDbClient<Channel>, Box<dyn std::er
 
 #[tokio::test]
 async fn test_grpc_server_start() {
-    start_test_server().await.unwrap();
-    let mut client = create_test_client().await.unwrap();
+    let server_addr = start_test_server().await.unwrap();
+    let mut client = create_test_client(server_addr).await.unwrap();
 
     // insert a test vector
     let test_vec = vec![1.0, 2.0, 3.0];
@@ -89,8 +89,8 @@ async fn test_grpc_server_start() {
 
 #[tokio::test]
 async fn test_insert_vector_rpc() {
-    start_test_server().await.unwrap();
-    let mut client = create_test_client().await.unwrap();
+    let server_addr = start_test_server().await.unwrap();
+    let mut client = create_test_client(server_addr).await.unwrap();
 
     // insert a test vector
     let test_vec = vec![1.0, 2.0, 3.0];
@@ -141,8 +141,8 @@ async fn test_insert_vector_rpc() {
 
 #[tokio::test]
 async fn test_delete_vector_rpc() {
-    start_test_server().await.unwrap();
-    let mut client = create_test_client().await.unwrap();
+    let server_addr = start_test_server().await.unwrap();
+    let mut client = create_test_client(server_addr).await.unwrap();
 
     // insert a test vector
     let test_vec = vec![1.0, 2.0, 3.0];
@@ -184,8 +184,8 @@ async fn test_delete_vector_rpc() {
 
 #[tokio::test]
 async fn test_search_vector_rpc() {
-    start_test_server().await.unwrap();
-    let mut client = create_test_client().await.unwrap();
+    let server_addr = start_test_server().await.unwrap();
+    let mut client = create_test_client(server_addr).await.unwrap();
 
     // insert a test vector
     let test_vec = vec![1.0, 2.0, 3.0];
@@ -232,8 +232,8 @@ async fn test_search_vector_rpc() {
 
 #[tokio::test]
 async fn test_unauthorized_rpc() {
-    start_test_server().await.unwrap();
-    let mut client = create_test_client().await.unwrap();
+    let server_addr = start_test_server().await.unwrap();
+    let mut client = create_test_client(server_addr).await.unwrap();
 
     // insert a test vector
     let test_vec = vec![1.0, 2.0, 3.0];
