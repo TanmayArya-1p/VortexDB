@@ -66,6 +66,10 @@ pub enum IndexType {
     HNSW,
 }
 
-pub trait SerializableIndexer {
-	fn serialize_topology(&self) -> Vec<u8>;
+pub trait SerializableIndexer: VectorIndex {
+    fn serialize_topology(&self) -> Result<Vec<u8>, DbError>;
+    fn serialize_metadata(&self) -> Result<Vec<u8>, DbError>;
+    fn magic_bytes(&self) -> [u8; 4];
+
+    // fn deserialize(metadata: Vec<u8>, topology: Vec<u8>) -> Result<Box<dyn VectorIndex>, DbError>;
 }

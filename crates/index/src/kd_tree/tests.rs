@@ -1,7 +1,8 @@
 use super::index::KDTree;
+use crate::SerializableIndexer;
 use crate::VectorIndex;
 use crate::distance;
-use crate::flat::FlatIndex;
+use crate::flat::index::FlatIndex;
 use defs::{DbError, IndexedVector, Similarity};
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -700,4 +701,36 @@ fn test_kdtree_vs_flat_euclidean_5d() {
             );
         }
     }
+}
+
+#[test]
+fn test_serialize_and_deserialize() {
+    let id1 = Uuid::new_v4();
+    let id2 = Uuid::new_v4();
+    let id3 = Uuid::new_v4();
+    let id4 = Uuid::new_v4();
+
+    let vectors = vec![
+        make_vector_with_id(id1, vec![1.0, 2.0, 3.0]),
+        make_vector_with_id(id2, vec![4.0, 5.0, 6.0]),
+        make_vector_with_id(id3, vec![7.0, 8.0, 9.0]),
+    ];
+    let mut tree_before = KDTree::build(vectors).unwrap();
+    tree_before
+        .insert(make_vector_with_id(id4, vec![10.0, 11.0, 12.0]))
+        .unwrap();
+    tree_before.delete(id1).unwrap();
+
+    let serialized_meta = tree_before.serialize_metadata().unwrap();
+    let serialized_topo = tree_before.serialize_topology().unwrap();
+
+    let tree = KDTree::deserialize(serialized_meta, serialized_topo).unwrap();
+
+    assert!(tree.root.is_some());
+    assert_eq!(tree.dim, 3);
+    assert_eq!(tree.total_nodes, 4);
+    assert!(!tree.point_ids.contains(&id1));
+    assert!(tree.point_ids.contains(&id2));
+    assert!(tree.point_ids.contains(&id3));
+    assert!(tree.point_ids.contains(&id3));
 }

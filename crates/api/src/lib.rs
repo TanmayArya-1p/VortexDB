@@ -5,7 +5,7 @@ use std::path::PathBuf;
 // use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
-use index::flat::FlatIndex;
+use index::flat::index::FlatIndex;
 use index::{IndexType, VectorIndex};
 use storage::rocks_db::RocksDbStorage;
 use storage::{StorageEngine, StorageType, VectorPage};

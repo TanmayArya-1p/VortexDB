@@ -1,6 +1,5 @@
 pub mod index;
 mod serialize;
-pub mod types;
 
 #[cfg(test)]
 mod tests;

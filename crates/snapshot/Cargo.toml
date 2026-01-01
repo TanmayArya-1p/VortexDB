@@ -1,0 +1,20 @@
+[package]
+name = "snapshot"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+semver = "1.0.27"
+defs.workspace = true
+index.workspace = true
+storage.workspace = true
+tempfile.workspace = true
+uuid.workspace = true
+sha2 = "0.10.9"
+flate2 = "1.1.5"
+chrono.workspace = true
+tar = "0.4.44"
+serde.workspace = true
+serde_json.workspace = true
+data-encoding = "2.9.0"

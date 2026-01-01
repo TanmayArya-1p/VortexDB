@@ -10,6 +10,7 @@ pub enum DbError {
     IndexInitError, //TODO: Change this
     UnsupportedSimilarity,
     DimensionMismatch,
+    SnapshotError(String),
 }
 
 #[derive(Debug)]
