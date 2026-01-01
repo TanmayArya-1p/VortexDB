@@ -65,3 +65,7 @@ pub enum IndexType {
     KDTree,
     HNSW,
 }
+
+pub trait SerializableIndexer {
+	fn serialize_topology(&self) -> Vec<u8>;
+}
