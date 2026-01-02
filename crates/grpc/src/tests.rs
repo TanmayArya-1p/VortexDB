@@ -8,7 +8,7 @@ use index::IndexType;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use storage::StorageType;
-use tempfile::tempdir;
+use tempfile::{TempDir, tempdir};
 use tonic::transport::Channel;
 
 // Inspired from https://github.com/hyperium/tonic/discussions/924#discussioncomment-9854088
@@ -22,7 +22,7 @@ fn append_test_auth_header<T>(request: &mut tonic::Request<T>, token: &str) {
         .insert(AUTHORIZATION_HEADER_KEY, auth_value.parse().unwrap());
 }
 
-async fn start_test_server() -> Result<SocketAddr, Box<dyn std::error::Error>> {
+async fn start_test_server() -> Result<(SocketAddr, TempDir), Box<dyn std::error::Error>> {
     // using a temporary directory for db datapath
     let temp_dir = tempdir().unwrap();
 
@@ -50,7 +50,7 @@ async fn start_test_server() -> Result<SocketAddr, Box<dyn std::error::Error>> {
         .inspect_err(|err| panic!("Could not start test server : {:?}", err));
     });
 
-    Ok(listener_addr)
+    Ok((listener_addr, temp_dir))
 }
 
 async fn create_test_client(
@@ -65,7 +65,7 @@ async fn create_test_client(
 
 #[tokio::test]
 async fn test_grpc_server_start() {
-    let server_addr = start_test_server().await.unwrap();
+    let (server_addr, _temp_dir) = start_test_server().await.unwrap();
     let mut client = create_test_client(server_addr).await.unwrap();
 
     // insert a test vector
@@ -85,7 +85,7 @@ async fn test_grpc_server_start() {
 
 #[tokio::test]
 async fn test_insert_vector_rpc() {
-    let server_addr = start_test_server().await.unwrap();
+    let (server_addr, _temp_dir) = start_test_server().await.unwrap();
     let mut client = create_test_client(server_addr).await.unwrap();
 
     // insert a test vector
@@ -133,7 +133,7 @@ async fn test_insert_vector_rpc() {
 
 #[tokio::test]
 async fn test_delete_vector_rpc() {
-    let server_addr = start_test_server().await.unwrap();
+    let (server_addr, _temp_dir) = start_test_server().await.unwrap();
     let mut client = create_test_client(server_addr).await.unwrap();
 
     // insert a test vector
@@ -175,7 +175,7 @@ async fn test_delete_vector_rpc() {
 
 #[tokio::test]
 async fn test_search_vector_rpc() {
-    let server_addr = start_test_server().await.unwrap();
+    let (server_addr, _temp_dir) = start_test_server().await.unwrap();
     let mut client = create_test_client(server_addr).await.unwrap();
 
     // insert a test vector
@@ -221,7 +221,7 @@ async fn test_search_vector_rpc() {
 
 #[tokio::test]
 async fn test_unauthorized_rpc() {
-    let server_addr = start_test_server().await.unwrap();
+    let (server_addr, _temp_dir) = start_test_server().await.unwrap();
     let mut client = create_test_client(server_addr).await.unwrap();
 
     // insert a test vector

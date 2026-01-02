@@ -6,7 +6,6 @@ use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use storage::StorageType;
-use tempfile::tempdir;
 use tracing::{Level, event};
 
 const DEFAULT_HTTP_PORT: &str = "3000";
@@ -146,11 +145,7 @@ impl ServerConfig {
             fs::create_dir_all(&path).map_err(|_| ConfigError::InvalidDataPath)?;
             path
         } else {
-            let tempbuf = tempdir()
-                .map_err(|e| ConfigError::IoError(e.to_string()))?
-                .path()
-                .to_path_buf()
-                .join("vectordb");
+            let tempbuf = env::temp_dir().join("vectordb");
             fs::create_dir_all(&tempbuf).map_err(|e| ConfigError::IoError(e.to_string()))?;
             event!(
                 Level::WARN,
