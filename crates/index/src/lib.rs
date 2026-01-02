@@ -3,7 +3,7 @@ use defs::{DbError, DenseVector, IndexedVector, PointId, Similarity};
 pub mod flat;
 pub mod kd_tree;
 
-pub trait VectorIndex: Send + Sync {
+pub trait VectorIndex: Send + Sync + SerializableIndexer {
     fn insert(&mut self, vector: IndexedVector) -> Result<(), DbError>;
 
     // Returns true if point id existed and is deleted, else returns false
@@ -66,7 +66,7 @@ pub enum IndexType {
     HNSW,
 }
 
-pub trait SerializableIndexer: VectorIndex {
+pub trait SerializableIndexer {
     fn serialize_topology(&self) -> Result<Vec<u8>, DbError>;
     fn serialize_metadata(&self) -> Result<Vec<u8>, DbError>;
     fn magic_bytes(&self) -> [u8; 4];

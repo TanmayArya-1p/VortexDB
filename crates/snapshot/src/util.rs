@@ -24,7 +24,7 @@ fn topology_file_name(id: &Uuid) -> String {
     format!("{}-index-topo.bin", id)
 }
 
-// sauce: https://stackoverflow.com/questions/69787906/how-to-hash-a-binary-file-in-rust
+// source: https://stackoverflow.com/questions/69787906/how-to-hash-a-binary-file-in-rust
 pub fn sha256_digest(path: &PathBuf) -> Result<String, Error> {
     let input = File::open(path)?;
     let mut reader = BufReader::new(input);
@@ -91,24 +91,26 @@ impl Snapshot {
         Ok(topology_file_path)
     }
 
-    pub fn save_manifest(path: &Path, manifest: &SnapshotManifest) -> Result<(), Error> {
-        let manifest_file = path.join("manifest.json");
+    pub fn save_manifest(path: &Path, manifest: &SnapshotManifest) -> Result<PathBuf, Error> {
+        let manifest_path = path.join("manifest.json");
 
-        let file = std::fs::File::create(manifest_file.clone())?;
+        let file = std::fs::File::create(manifest_path.clone())?;
         let mut writer = BufWriter::new(file);
         serde_json::to_writer(&mut writer, manifest)?;
         writer.flush()?;
 
-        Ok(())
+        Ok(manifest_path)
     }
 
-    pub fn compress_archive(path: &Path, files: &[&Path]) -> Result<(), Error> {
+    pub fn compress_archive(path: &Path, files: &[&Path], base_dir: &Path) -> Result<(), Error> {
         let tar_gz = File::create(path)?;
         let enc = GzEncoder::new(tar_gz, Compression::default());
         let mut tar = Builder::new(enc);
 
         for file in files {
-            tar.append_path(file)?;
+            let rel_path = file.strip_prefix(base_dir).unwrap_or(file);
+            let mut f = File::open(file)?;
+            tar.append_file(rel_path, &mut f)?;
         }
 
         tar.into_inner()?;

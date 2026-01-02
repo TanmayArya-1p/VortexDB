@@ -1,5 +1,5 @@
 use defs::{DbError, DenseVector, Payload, PointId};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::rocks_db::RocksDbStorage;
@@ -18,6 +18,9 @@ pub trait StorageEngine: Send + Sync {
     fn delete_point(&self, id: PointId) -> Result<(), DbError>;
     fn contains_point(&self, id: PointId) -> Result<bool, DbError>;
     fn list_vectors(&self, offset: PointId, limit: usize) -> Result<Option<VectorPage>, DbError>;
+
+    fn checkpoint(&self, path: &Path) -> Result<(), DbError>;
+    fn restore_checkpoint(&mut self, path: &Path) -> Result<(), DbError>;
 }
 
 pub mod in_memory;

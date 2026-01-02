@@ -3,8 +3,17 @@
 use crate::{StorageEngine, VectorPage};
 use bincode::{deserialize, serialize};
 use defs::{DbError, DenseVector, Payload, Point, PointId};
+use flate2::{
+    Compression,
+    write::{GzDecoder, GzEncoder},
+};
 use rocksdb::{DB, Error, Options};
-use std::path::PathBuf;
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
+use tar::{Archive, Builder};
+use tempfile::tempdir;
 
 //TODO: Implement RocksDbStorage with necessary fields and implementations
 //TODO: Optimize the basic design
@@ -21,6 +30,16 @@ pub enum RocksDBStorageError {
 impl RocksDbStorage {
     // Creates new db or switches to existing db
     pub fn new(path: impl Into<PathBuf>) -> Result<Self, DbError> {
+        let converted_path = path.into();
+        let db = Self::initialize_db(&converted_path)?;
+
+        Ok(RocksDbStorage {
+            path: converted_path,
+            db,
+        })
+    }
+
+    fn initialize_db(path: &Path) -> Result<DB, DbError> {
         // Initialize a db at the given location
         let mut options = Options::default();
 
@@ -30,15 +49,8 @@ impl RocksDbStorage {
 
         options.create_if_missing(true);
 
-        let converted_path = path.into();
-
-        let db = DB::open(&options, converted_path.clone())
-            .map_err(|e| DbError::StorageError(e.into_string()))?;
-
-        Ok(RocksDbStorage {
-            path: converted_path,
-            db,
-        })
+        let db = DB::open(&options, path).map_err(|e| DbError::StorageError(e.into_string()))?;
+        Ok(db)
     }
 
     pub fn get_current_path(&self) -> PathBuf {
@@ -152,6 +164,69 @@ impl StorageEngine for RocksDbStorage {
         }
         Ok(Some((result, last_id)))
     }
+
+    fn checkpoint(&self, path: &Path) -> Result<(), DbError> {
+        // flush db first for durability
+        self.db.flush().map_err(|e| {
+            DbError::StorageCheckpointError(format!(
+                "Failed to flush database: {}",
+                e.into_string()
+            ))
+        })?;
+
+        let temp_dir_parent = tempdir().unwrap();
+        let temp_dir = temp_dir_parent.path().join("checkpoint");
+
+        let checkpoint = rocksdb::checkpoint::Checkpoint::new(&self.db)
+            .map_err(|e| DbError::StorageCheckpointError(e.into_string()))?;
+        checkpoint
+            .create_checkpoint(temp_dir.clone())
+            .map_err(|e| DbError::StorageCheckpointError(e.into_string()))?;
+
+        // compress the checkpoint into an archive
+        let tar_gz = File::create(path).map_err(|e| {
+            DbError::StorageCheckpointError(format!("Couldn't compress rocksdb checkpoint: {}", e))
+        })?;
+        let enc = GzEncoder::new(tar_gz, Compression::default());
+        let mut tar = Builder::new(enc);
+        tar.append_dir_all("", temp_dir.clone()).map_err(|e| {
+            DbError::StorageCheckpointError(format!("Couldn't compress rocksdb checkpoint: {}", e))
+        })?;
+
+        tar.into_inner().map_err(|e| {
+            DbError::StorageCheckpointError(format!("Couldn't compress rocksdb checkpoint: {}", e))
+        })?;
+
+        Ok(())
+    }
+
+    fn restore_checkpoint(&mut self, path: &Path) -> Result<(), DbError> {
+        let tar_gz = File::open(path).map_err(|e| {
+            DbError::StorageCheckpointError(format!("Couldn't open rocksdb checkpoint: {}", e))
+        })?;
+        let dec = GzDecoder::new(tar_gz);
+        let mut tar = Archive::new(dec);
+
+        // remove existing stuff in data path
+        std::fs::remove_dir_all(&self.path).map_err(|e| {
+            DbError::StorageCheckpointError(format!("Couldn't remove existing data: {}", e))
+        })?;
+
+        // create new data path
+        std::fs::create_dir_all(&self.path).map_err(|e| {
+            DbError::StorageCheckpointError(format!("Couldn't create data path: {}", e))
+        })?;
+
+        tar.unpack(&self.path).map_err(|e| {
+            DbError::StorageCheckpointError(format!("Couldn't unpack rocksdb checkpoint: {}", e))
+        })?;
+
+        // reinitialize db
+        self.db.cancel_all_background_work(true);
+        self.db = Self::initialize_db(&self.path)?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -160,26 +235,24 @@ mod tests {
     use defs::ContentType;
     use uuid::Uuid;
 
-    use tempfile::tempdir;
+    use tempfile::{TempDir, tempdir};
 
-    fn create_test_db() -> (RocksDbStorage, String) {
+    fn create_test_db() -> (RocksDbStorage, TempDir) {
         let temp_dir = tempdir().unwrap();
-        let temp_dir_path = temp_dir.path().to_str().unwrap().to_string();
 
-        let db = RocksDbStorage::new(temp_dir_path.clone()).expect("Failed to create RocksDB");
-        (db, temp_dir_path)
+        let db = RocksDbStorage::new(temp_dir.path()).expect("Failed to create RocksDB");
+        (db, temp_dir)
     }
 
     #[test]
     fn test_new_rocksdb_storage() {
-        let (db, path) = create_test_db();
-        assert_eq!(db.get_current_path(), PathBuf::from(path.clone()));
-        std::fs::remove_dir_all(path).unwrap_or_default();
+        let (db, temp_dir) = create_test_db();
+        assert_eq!(db.get_current_path(), temp_dir.path());
     }
 
     #[test]
     fn test_insert_and_get_vector() {
-        let (db, path) = create_test_db();
+        let (db, _temp_dir) = create_test_db();
         let id = Uuid::new_v4();
         let vector = Some(vec![0.1, 0.2, 0.3]);
         let payload = Some(Payload {
@@ -190,13 +263,11 @@ mod tests {
         assert!(db.insert_point(id, vector.clone(), payload).is_ok());
         let result = db.get_vector(id).unwrap();
         assert_eq!(result, vector);
-
-        std::fs::remove_dir_all(path).unwrap_or_default();
     }
 
     #[test]
     fn test_insert_and_get_payload() {
-        let (db, path) = create_test_db();
+        let (db, _temp_dir) = create_test_db();
         let id = Uuid::new_v4();
         let payload = Some(Payload {
             content_type: ContentType::Text,
@@ -212,13 +283,11 @@ mod tests {
             content: "Test".to_string(),
         });
         assert_eq!(result, expected);
-
-        std::fs::remove_dir_all(path).unwrap_or_default();
     }
 
     #[test]
     fn test_contains_point() {
-        let (db, path) = create_test_db();
+        let (db, _temp_dir) = create_test_db();
         let id = Uuid::new_v4();
         let payload = Some(Payload {
             content_type: ContentType::Text,
@@ -231,13 +300,11 @@ mod tests {
         db.insert_point(id, vector, payload).unwrap();
 
         assert!(db.contains_point(id).unwrap());
-
-        std::fs::remove_dir_all(path).unwrap_or_default();
     }
 
     #[test]
     fn test_delete_point() {
-        let (db, path) = create_test_db();
+        let (db, _temp_dir) = create_test_db();
         let id = Uuid::new_v4();
         let payload = Some(Payload {
             content_type: ContentType::Text,
@@ -255,27 +322,42 @@ mod tests {
         assert!(!db.contains_point(id).unwrap());
         assert_eq!(db.get_vector(id).unwrap(), None);
         assert_eq!(db.get_payload(id).unwrap(), None);
-
-        std::fs::remove_dir_all(path).unwrap_or_default();
     }
 
     #[test]
     fn test_get_nonexistent_vector() {
-        let (db, path) = create_test_db();
+        let (db, _temp_dir) = create_test_db();
         let id = Uuid::new_v4();
 
         assert_eq!(db.get_vector(id).unwrap(), None);
-
-        std::fs::remove_dir_all(path).unwrap_or_default();
     }
 
     #[test]
     fn test_get_nonexistent_payload() {
-        let (db, path) = create_test_db();
+        let (db, _temp_dir) = create_test_db();
         let id = Uuid::new_v4();
 
         assert_eq!(db.get_payload(id).unwrap(), None);
+    }
 
-        std::fs::remove_dir_all(path).unwrap_or_default();
+    #[test]
+    fn test_create_and_load_checkpoint() {
+        let (mut db, temp_dir) = create_test_db();
+        let checkpoint_path = temp_dir.path().join("temp-checkpoint.tar.gz");
+
+        let id = Uuid::new_v4();
+        let vector = Some(vec![0.1, 0.2, 0.3]);
+        let payload = Some(Payload {
+            content_type: ContentType::Text,
+            content: "Test".to_string(),
+        });
+
+        assert!(db.insert_point(id, vector.clone(), payload).is_ok());
+
+        db.checkpoint(&checkpoint_path)
+            .expect("Failed to create checkpoint");
+        db.restore_checkpoint(&checkpoint_path).unwrap();
+
+        assert!(db.contains_point(id).unwrap());
     }
 }

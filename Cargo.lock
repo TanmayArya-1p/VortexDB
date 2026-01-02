@@ -53,6 +53,7 @@ version = "0.1.0"
 dependencies = [
  "defs",
  "index",
+ "snapshot",
  "storage",
  "tempfile",
  "uuid",
@@ -2089,7 +2090,9 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "defs",
+ "flate2",
  "rocksdb",
+ "tar",
  "tempfile",
  "uuid",
 ]

@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 defs.workspace = true
 index.workspace = true
+snapshot.workspace = true
 storage.workspace = true
 tempfile.workspace = true
 uuid.workspace = true

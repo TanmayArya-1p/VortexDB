@@ -1,12 +1,13 @@
 use defs::{DbError, IndexedVector, Similarity};
 
 use defs::{DenseVector, Payload, Point, PointId};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 // use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use index::flat::index::FlatIndex;
 use index::{IndexType, VectorIndex};
+use snapshot::types::Snapshot;
 use storage::rocks_db::RocksDbStorage;
 use storage::{StorageEngine, StorageType, VectorPage};
 
@@ -129,6 +130,18 @@ impl VectorDb {
 
         Ok(inserted)
     }
+
+    pub fn create_snapshot(&self, path: &Path) -> Result<Snapshot, DbError> {
+        let index = self.index.read().map_err(|_| DbError::LockError)?;
+        let storage = self.storage.as_ref();
+
+        let snapshot = Snapshot::create(&*index, storage, path.to_path_buf())?;
+        Ok(snapshot)
+    }
+
+    pub fn restore_snapshot(&self, _path: &Path) -> Result<(), DbError> {
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -168,10 +181,10 @@ mod tests {
 
     use super::*;
     use defs::ContentType;
-    use tempfile::tempdir;
+    use tempfile::{TempDir, tempdir};
 
     // Helper function to create a test database
-    fn create_test_db() -> VectorDb {
+    fn create_test_db() -> (VectorDb, TempDir) {
         let temp_dir = tempdir().unwrap();
         let config = DbConfig {
             storage_type: StorageType::RocksDb,
@@ -179,12 +192,12 @@ mod tests {
             data_path: temp_dir.path().to_path_buf(),
             dimension: 3,
         };
-        init_api(config).unwrap()
+        (init_api(config).unwrap(), temp_dir)
     }
 
     #[test]
     fn test_insert_and_get() {
-        let db = create_test_db();
+        let (db, _temp_dir) = create_test_db();
         let vector = vec![1.0, 2.0, 3.0];
         let payload = Payload {
             content_type: ContentType::Text,
@@ -209,7 +222,7 @@ mod tests {
 
     #[test]
     fn test_dimension_mismatch() {
-        let db = create_test_db();
+        let (db, _temp_dir) = create_test_db();
         let v1 = vec![1.0, 2.0, 3.0];
         let v2 = vec![1.0, 2.0];
         let payload = defs::Payload {
@@ -228,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_delete() {
-        let db = create_test_db();
+        let (db, _temp_dir) = create_test_db();
         let vector = vec![1.0, 2.0, 3.0];
         let payload = Payload {
             content_type: ContentType::Text,
@@ -251,7 +264,7 @@ mod tests {
 
     #[test]
     fn test_search() {
-        let db = create_test_db();
+        let (db, _temp_dir) = create_test_db();
 
         // Insert some points
         let vectors = vec![
@@ -280,7 +293,7 @@ mod tests {
 
     #[test]
     fn test_search_limit() {
-        let db = create_test_db();
+        let (db, _temp_dir) = create_test_db();
 
         // Insert 5 points
         let mut ids = Vec::new();
@@ -307,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_empty_database() {
-        let db = create_test_db();
+        let (db, _temp_dir) = create_test_db();
 
         // Get non-existent point
         assert!(db.get(Uuid::new_v4()).unwrap().is_none());
@@ -319,7 +332,7 @@ mod tests {
 
     #[test]
     fn test_list_vectors() {
-        let db = create_test_db();
+        let (db, _temp_dir) = create_test_db();
         // insert some points
         let mut ids = Vec::new();
         for i in 0..10 {
@@ -350,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_build_index() {
-        let db = create_test_db();
+        let (db, _temp_dir) = create_test_db();
 
         // insert some points
         for i in 0..10 {
@@ -369,5 +382,24 @@ mod tests {
         // rebuild the index
         let inserted = db.build_index().unwrap();
         assert_eq!(inserted, 10);
+    }
+
+    #[test]
+    fn test_create_snapshot() {
+        let (db, _temp_dir) = create_test_db();
+
+        assert!(
+            db.insert(
+                vec![0.0, 1.0, 2.0],
+                Payload {
+                    content_type: ContentType::Text,
+                    content: format!("Test content {}", 0),
+                },
+            )
+            .is_ok()
+        );
+
+        let temp_snapshot_dir = tempdir().unwrap();
+        assert!(db.create_snapshot(temp_snapshot_dir.path()).is_ok());
     }
 }

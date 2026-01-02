@@ -11,6 +11,7 @@ pub enum DbError {
     UnsupportedSimilarity,
     DimensionMismatch,
     SnapshotError(String),
+    StorageCheckpointError(String),
 }
 
 #[derive(Debug)]

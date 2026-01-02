@@ -21,7 +21,3 @@ pub struct SnapshotManifest {
     pub index_topo_checksum: String,
     pub storage_checkpoint_checksum: String,
 }
-
-// TODO: NOTES
-// manifest should have checksums of topo , metadata , storage, parser version, date created, snapshot metadata: id, date, sem_ver
-// shoudl decode filename only when SnapshotEngine is being used otherwise it is pretty much useless
