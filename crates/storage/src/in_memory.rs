@@ -1,6 +1,9 @@
-use crate::{StorageEngine, VectorPage};
+use crate::{StorageCheckpoint, StorageEngine, VectorPage};
 use defs::{DbError, DenseVector, Payload, PointId};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use crate::StorageType;
+
+
 
 pub struct MemoryStorage {
     // define here how MemoryStorage will be defined
@@ -42,10 +45,12 @@ impl StorageEngine for MemoryStorage {
     fn list_vectors(&self, _offset: PointId, _limit: usize) -> Result<Option<VectorPage>, DbError> {
         Ok(None)
     }
-    fn checkpoint(&self, _path: &Path) -> Result<(), DbError> {
-        Ok(())
+
+    fn checkpoint_at(&self, _path: &Path) -> Result<StorageCheckpoint, DbError> {
+        Ok(StorageCheckpoint { path: PathBuf::default(), storage_type: StorageType::InMemory})
     }
-    fn restore_checkpoint(&mut self, _path: &Path) -> Result<(), DbError> {
+
+    fn restore_checkpoint(&mut self, _checkpoint: &StorageCheckpoint) -> Result<(), DbError> {
         Ok(())
     }
 }

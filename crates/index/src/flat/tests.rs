@@ -1,5 +1,5 @@
 use super::index::FlatIndex;
-use crate::{SerializableIndexer, VectorIndex};
+use crate::{SerializableIndex, VectorIndex};
 use defs::{IndexedVector, Similarity};
 use uuid::Uuid;
 
@@ -226,10 +226,9 @@ fn test_serialize_and_deserialize() {
 
     index_before.delete(id1).unwrap();
 
-    let serialized_meta = index_before.serialize_metadata().unwrap();
-    let serialized_topo = index_before.serialize_topology().unwrap();
+    let snapshot = index_before.snapshot().unwrap();
 
-    let idx = FlatIndex::deserialize(serialized_meta, serialized_topo).unwrap();
+    let idx = FlatIndex::deserialize(&snapshot).unwrap();
 
     assert_eq!(idx.index.len(), 3);
     assert!(!idx.index.contains(&v1));

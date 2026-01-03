@@ -51,6 +51,8 @@ pub enum Similarity {
     Cosine,
 }
 
+pub type Magic = [u8; 4];
+
 // Struct which stores the distance between a vector and query vector and implements ordering traits
 #[derive(Copy, Clone)]
 pub struct DistanceOrderedVector<'q> {

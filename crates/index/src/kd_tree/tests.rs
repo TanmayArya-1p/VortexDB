@@ -1,5 +1,5 @@
 use super::index::KDTree;
-use crate::SerializableIndexer;
+use crate::SerializableIndex;
 use crate::VectorIndex;
 use crate::distance;
 use crate::flat::index::FlatIndex;
@@ -721,10 +721,8 @@ fn test_serialize_and_deserialize() {
         .unwrap();
     tree_before.delete(id1).unwrap();
 
-    let serialized_meta = tree_before.serialize_metadata().unwrap();
-    let serialized_topo = tree_before.serialize_topology().unwrap();
-
-    let tree = KDTree::deserialize(serialized_meta, serialized_topo).unwrap();
+    let snapshot = tree_before.snapshot().unwrap();
+    let tree = KDTree::deserialize(&snapshot).unwrap();
 
     assert!(tree.root.is_some());
     assert_eq!(tree.dim, 3);

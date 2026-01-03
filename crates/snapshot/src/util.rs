@@ -1,26 +1,22 @@
-use crate::types::{Snapshot, SnapshotManifest};
 use data_encoding::HEXLOWER;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{BufReader, Error, Read};
 use std::path::PathBuf;
 
-use defs::DbError;
-use flate2::{Compression, read::GzEncoder};
-use std::{
-    io::{BufWriter, Write},
-    path::Path,
-};
+use defs::{DbError, Magic};
+use flate2::{Compression, write::GzEncoder};
+use std::{io::Write, path::Path};
 use tar::Builder;
 use uuid::Uuid;
 
 #[inline]
-fn metadata_file_name(id: &Uuid) -> String {
+pub fn metadata_file_name(id: &Uuid) -> String {
     format!("{}-index-meta.bin", id)
 }
 
 #[inline]
-fn topology_file_name(id: &Uuid) -> String {
+pub fn topology_file_name(id: &Uuid) -> String {
     format!("{}-index-topo.bin", id)
 }
 
@@ -44,76 +40,120 @@ pub fn sha256_digest(path: &PathBuf) -> Result<String, Error> {
     Ok(HEXLOWER.encode(digest.as_ref()))
 }
 
-impl Snapshot {
-    pub fn save_metadata(
-        path: &Path,
-        uuid: Uuid,
-        bytes: &[u8],
-        magic: &[u8; 4],
-    ) -> Result<PathBuf, DbError> {
-        let file_name = metadata_file_name(&uuid);
-        let metadata_file_path = path.join(file_name);
+pub fn save_index_metadata(
+    path: &Path,
+    uuid: Uuid,
+    bytes: &[u8],
+    magic: &Magic,
+    dimensions: usize,
+) -> Result<PathBuf, DbError> {
+    let file_name = metadata_file_name(&uuid);
+    let metadata_file_path = path.join(file_name);
 
-        let mut file = std::fs::File::create(metadata_file_path.clone()).map_err(|e| {
-            DbError::SnapshotError(format!("Could not create metadata file: {}", e))
-        })?;
+    let mut file = std::fs::File::create(metadata_file_path.clone())
+        .map_err(|e| DbError::SnapshotError(format!("Could not create metadata file: {}", e)))?;
 
-        file.write_all(magic)
-            .map_err(|e| DbError::SnapshotError(format!("Could not write metadata file: {}", e)))?;
-        file.write_all(&bytes.len().to_le_bytes())
-            .map_err(|e| DbError::SnapshotError(format!("Could not write metadata file: {}", e)))?;
-        file.write_all(bytes)
-            .map_err(|e| DbError::SnapshotError(format!("Could not write metadata file: {}", e)))?;
+    file.write_all(magic)
+        .map_err(|e| DbError::SnapshotError(format!("Could not write metadata file: {}", e)))?;
+    file.write_all(&dimensions.to_le_bytes())
+        .map_err(|e| DbError::SnapshotError(format!("Could not write metadata file: {}", e)))?;
+    file.write_all(&bytes.len().to_le_bytes())
+        .map_err(|e| DbError::SnapshotError(format!("Could not write metadata file: {}", e)))?;
+    file.write_all(bytes)
+        .map_err(|e| DbError::SnapshotError(format!("Could not write metadata file: {}", e)))?;
 
-        Ok(metadata_file_path)
+    Ok(metadata_file_path)
+}
+
+pub fn save_topology(
+    path: &Path,
+    uuid: Uuid,
+    bytes: &[u8],
+    magic: &Magic,
+) -> Result<PathBuf, DbError> {
+    let file_name = topology_file_name(&uuid);
+    let topology_file_path = path.join(file_name);
+
+    let mut file = std::fs::File::create(topology_file_path.clone())
+        .map_err(|e| DbError::SnapshotError(format!("Could not create topology file: {}", e)))?;
+
+    file.write_all(magic)
+        .map_err(|e| DbError::SnapshotError(format!("Could not write topology file: {}", e)))?;
+    file.write_all(&bytes.len().to_le_bytes())
+        .map_err(|e| DbError::SnapshotError(format!("Could not write topology file: {}", e)))?;
+    file.write_all(bytes)
+        .map_err(|e| DbError::SnapshotError(format!("Could not write topology file: {}", e)))?;
+
+    Ok(topology_file_path)
+}
+
+pub fn compress_archive(path: &Path, files: &[&Path], base_dir: &Path) -> Result<(), Error> {
+    let tar_gz = File::create(path)?;
+    let enc = GzEncoder::new(tar_gz, Compression::default());
+    let mut tar = Builder::new(enc);
+
+    for file in files {
+        let rel_path = file.file_name().unwrap();
+        let mut f = File::open(file)?;
+        tar.append_file(rel_path, &mut f)?;
     }
 
-    pub fn save_topology(
-        path: &Path,
-        uuid: Uuid,
-        bytes: &[u8],
-        magic: &[u8; 4],
-    ) -> Result<PathBuf, DbError> {
-        let file_name = topology_file_name(&uuid);
-        let topology_file_path = path.join(file_name);
+    tar.into_inner()?;
+    Ok(())
+}
 
-        let mut file = std::fs::File::create(topology_file_path.clone()).map_err(|e| {
-            DbError::SnapshotError(format!("Could not create topology file: {}", e))
-        })?;
+pub fn read_index_topology(path: &Path) -> Result<(Magic, Vec<u8>), DbError> {
+    let mut file = File::open(path)
+        .map_err(|e| DbError::SnapshotError(format!("Couldn't open topology file: {}", e)))?;
 
-        file.write_all(magic)
-            .map_err(|e| DbError::SnapshotError(format!("Could not write topology file: {}", e)))?;
-        file.write_all(&bytes.len().to_le_bytes())
-            .map_err(|e| DbError::SnapshotError(format!("Could not write topology file: {}", e)))?;
-        file.write_all(bytes)
-            .map_err(|e| DbError::SnapshotError(format!("Could not write topology file: {}", e)))?;
+    let mut magic = Magic::default();
+    file.read_exact(&mut magic).map_err(|e| {
+        DbError::SnapshotError(format!("Couldn't read magic from topology file: {}", e))
+    })?;
 
-        Ok(topology_file_path)
-    }
+    let mut len_bytes = [0u8; size_of::<usize>()];
+    file.read_exact(&mut len_bytes).map_err(|e| {
+        DbError::SnapshotError(format!("Couldn't read length from topology file: {}", e))
+    })?;
 
-    pub fn save_manifest(path: &Path, manifest: &SnapshotManifest) -> Result<PathBuf, Error> {
-        let manifest_path = path.join("manifest.json");
+    let len = usize::from_le_bytes(len_bytes);
+    let mut bytes = vec![0u8; len];
+    file.read_exact(&mut bytes).map_err(|e| {
+        DbError::SnapshotError(format!("Couldn't read bytes from topology file: {}", e))
+    })?;
 
-        let file = std::fs::File::create(manifest_path.clone())?;
-        let mut writer = BufWriter::new(file);
-        serde_json::to_writer(&mut writer, manifest)?;
-        writer.flush()?;
+    Ok((magic, bytes))
+}
 
-        Ok(manifest_path)
-    }
+pub fn read_index_metadata(path: &Path) -> Result<(Magic, usize, Vec<u8>), DbError> {
+    let mut file = File::open(path)
+        .map_err(|e| DbError::SnapshotError(format!("Couldn't open metadata file: {}", e)))?;
 
-    pub fn compress_archive(path: &Path, files: &[&Path], base_dir: &Path) -> Result<(), Error> {
-        let tar_gz = File::create(path)?;
-        let enc = GzEncoder::new(tar_gz, Compression::default());
-        let mut tar = Builder::new(enc);
+    let mut magic = Magic::default();
+    file.read_exact(&mut magic).map_err(|e| {
+        DbError::SnapshotError(format!("Couldn't read magic from metadata file: {}", e))
+    })?;
 
-        for file in files {
-            let rel_path = file.strip_prefix(base_dir).unwrap_or(file);
-            let mut f = File::open(file)?;
-            tar.append_file(rel_path, &mut f)?;
-        }
+    let mut dimensions_bytes = [0u8; size_of::<usize>()];
+    file.read_exact(&mut dimensions_bytes).map_err(|e| {
+        DbError::SnapshotError(format!(
+            "Couldn't read dimensions from metadata file: {}",
+            e
+        ))
+    })?;
 
-        tar.into_inner()?;
-        Ok(())
-    }
+    let dimensions = usize::from_le_bytes(dimensions_bytes);
+
+    let mut len_bytes = [0u8; size_of::<usize>()];
+    file.read_exact(&mut len_bytes).map_err(|e| {
+        DbError::SnapshotError(format!("Couldn't read length from metadata file: {}", e))
+    })?;
+
+    let len = usize::from_le_bytes(len_bytes);
+    let mut bytes = vec![0u8; len];
+    file.read_exact(&mut bytes).map_err(|e| {
+        DbError::SnapshotError(format!("Couldn't read bytes from metadata file: {}", e))
+    })?;
+
+    Ok((magic, dimensions, bytes))
 }

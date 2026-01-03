@@ -1,13 +1,14 @@
 use defs::{DbError, IndexedVector, Similarity};
 
 use defs::{DenseVector, Payload, Point, PointId};
+use index::kd_tree::index::KDTree;
 use std::path::{Path, PathBuf};
 // use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use index::flat::index::FlatIndex;
 use index::{IndexType, VectorIndex};
-use snapshot::types::Snapshot;
+use snapshot::Snapshot;
 use storage::rocks_db::RocksDbStorage;
 use storage::{StorageEngine, StorageType, VectorPage};
 
@@ -131,17 +132,13 @@ impl VectorDb {
         Ok(inserted)
     }
 
-    pub fn create_snapshot(&self, path: &Path) -> Result<Snapshot, DbError> {
-        let index = self.index.read().map_err(|_| DbError::LockError)?;
-        let storage = self.storage.as_ref();
+    // pub fn create_snapshot(&self, path: &Path) -> Result<Snapshot, DbError> {
+    //     let index = self.index.read().map_err(|_| DbError::LockError)?;
+    //     let storage = self.storage.as_ref();
 
-        let snapshot = Snapshot::create(&*index, storage, path.to_path_buf())?;
-        Ok(snapshot)
-    }
-
-    pub fn restore_snapshot(&self, _path: &Path) -> Result<(), DbError> {
-        Ok(())
-    }
+    //     let snapshot = Snapshot::create(self)?;
+    //     Ok(snapshot)
+    // }
 }
 
 #[derive(Debug)]
@@ -151,6 +148,56 @@ pub struct DbConfig {
     pub data_path: PathBuf,
     pub dimension: usize,
 }
+
+#[derive(Debug)]
+pub struct DbRestoreConfig {
+    pub data_path: PathBuf,
+    pub snapshot_path: PathBuf,
+}
+
+impl DbRestoreConfig {
+    pub fn new(data_path: PathBuf, snapshot_path: PathBuf) -> Self {
+        Self {
+            data_path,
+            snapshot_path,
+        }
+    }
+}
+
+pub fn create_snapshot(db: &VectorDb, path: &Path) -> Result<(), DbError> {
+    if !path.is_dir() {
+        return Err(DbError::SnapshotError(format!(
+            "Invalid path: {}",
+            path.display()
+        )));
+    }
+
+    let index_snapshot = db.index.snapshot()?;
+    // let storage_snapshot = db.storage.snapshot()?;
+
+    // let storage_checkpoint_path = temp_dir.path().join("storage-checkpoint.tar.gz");
+    // storage.checkpoint(&storage_checkpoint_path)?;
+
+
+    // let snapshot = Snapshot::create(db)?;
+    Ok(())
+}
+
+// pub fn restore_from_snapshot(config: &DbRestoreConfig) -> Result<VectorDb, DbError> {
+//     // snapshots only support rocksdb
+//     let mut storage = RocksDbStorage::new(config.data_path.clone())?;
+
+//     // restore the index from the snapshot
+//     let (index_restored, restored_storage, dimension) = Snapshot::load(&config.snapshot_path, &config.data_path)?;
+
+//     let index: RwLock<dyn VectorIndex> = index_restored.into();
+//     let storage : Arc<dyn StorageEngine> = restored_storage.into();
+
+//     // Init the db
+//     let db = VectorDb::_new(storage, index, dimension);
+
+//     Ok(db)
+// }
 
 pub fn init_api(config: DbConfig) -> Result<VectorDb, DbError> {
     // Initialize the storage engine
@@ -162,7 +209,8 @@ pub fn init_api(config: DbConfig) -> Result<VectorDb, DbError> {
     // Initialize the vector index
     let index: Arc<RwLock<dyn VectorIndex>> = match config.index_type {
         IndexType::Flat => Arc::new(RwLock::new(FlatIndex::new())),
-        _ => Arc::new(RwLock::new(FlatIndex::new())),
+        IndexType::KDTree => Arc::new(RwLock::new(KDTree::build_empty(config.dimension))),
+        _ => Arc::new(RwLock::new(FlatIndex::new())), // TODO: add hnsw here
     };
 
     // Init the db
@@ -385,21 +433,31 @@ mod tests {
     }
 
     #[test]
-    fn test_create_snapshot() {
-        let (db, _temp_dir) = create_test_db();
+    fn test_create_and_load_snapshot() {
+        let (old_db, temp_dir) = create_test_db();
 
-        assert!(
-            db.insert(
+        let point_id = old_db
+            .insert(
                 vec![0.0, 1.0, 2.0],
                 Payload {
                     content_type: ContentType::Text,
                     content: format!("Test content {}", 0),
                 },
             )
-            .is_ok()
-        );
+            .unwrap();
 
         let temp_snapshot_dir = tempdir().unwrap();
-        assert!(db.create_snapshot(temp_snapshot_dir.path()).is_ok());
+
+        let snapshot = old_db.create_snapshot(temp_snapshot_dir.path()).unwrap();
+
+        let reload_config = DbRestoreConfig {
+            data_path: temp_dir.path().to_path_buf(),
+            snapshot_path: snapshot.path,
+        };
+
+        std::mem::drop(old_db);
+        let loaded_db = restore_from_snapshot(&reload_config).unwrap();
+
+        assert!(loaded_db.get(point_id).is_ok());
     }
 }

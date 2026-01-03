@@ -1,15 +1,15 @@
 use std::collections::HashSet;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Write};
 
+use super::KD_TREE_MAGIC_BYTES;
 use super::index::KDTree;
 use super::types::KDTreeNode;
-use crate::SerializableIndexer;
+use crate::{SerializableIndex, IndexSnapshot};
 use bincode;
 use defs::{DbError, IndexedVector, PointId};
 use serde::{Deserialize, Serialize};
+use storage::StorageEngine;
 use uuid::Uuid;
-
-const KD_TREE_MAGIC_BYTES: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
 
 #[derive(Serialize, Deserialize)]
 pub struct KDTreeMetadata {
@@ -18,14 +18,12 @@ pub struct KDTreeMetadata {
     pub deleted_count: usize,
 }
 
-impl SerializableIndexer for KDTree {
-    fn magic_bytes(&self) -> [u8; 4] {
-        KD_TREE_MAGIC_BYTES
-    }
+impl SerializableIndex for KDTree {
 
     fn serialize_topology(&self) -> Result<Vec<u8>, DbError> {
         let mut buffer = Vec::new();
-        self.serialize_topology_recursive(&self.root, &mut buffer)?;
+        let mut cursor = Cursor::new(&mut buffer);
+        serialize_topology_recursive(&self.root, &mut cursor)?;
         Ok(buffer)
     }
 
@@ -42,6 +40,23 @@ impl SerializableIndexer for KDTree {
         buffer.extend_from_slice(metadata_bytes.as_slice());
         Ok(buffer)
     }
+
+    fn snapshot(&self) -> Result<IndexSnapshot, DbError> {
+        let topology_bytes = self.serialize_topology()?;
+        let metadata_bytes = self.serialize_metadata()?;
+        Ok(IndexSnapshot {
+            index_type: crate::IndexType::KDTree,
+            magic: KD_TREE_MAGIC_BYTES,
+            topology_b: topology_bytes,
+            metadata_b: metadata_bytes,
+        })
+    }
+
+    fn populate_vectors(&mut self, storage: &dyn StorageEngine) -> Result<(), DbError> {
+        populate_vectors_recursive(&mut self.root, storage)?;
+        Ok(())
+    }
+
 }
 
 const NODE_MARKER_BYTE: u8 = 1u8;
@@ -51,58 +66,75 @@ const DELETED_MASK: u8 = 2u8;
 
 impl KDTree {
     pub fn deserialize(
-        metadata_bytes: Vec<u8>,
-        topology_bytes: Vec<u8>,
-    ) -> Result<Box<KDTree>, DbError> {
+        IndexSnapshot { index_type, magic, topology_b, metadata_b }: &IndexSnapshot
+    ) -> Result<KDTree, DbError> {
+
+        if magic != &KD_TREE_MAGIC_BYTES {
+            return Err(DbError::SerializationError(format!("Invalid magic bytes")));
+        }
+
         let metadata: KDTreeMetadata =
-            bincode::deserialize(metadata_bytes.as_slice()).map_err(|e| {
+            bincode::deserialize(metadata_b.as_slice()).map_err(|e| {
                 DbError::SerializationError(format!(
                     "Failed to deserailize KD Tree Metadata: {}",
                     e
                 ))
             })?;
 
-        let mut buf = Cursor::new(topology_bytes);
+        let mut buf = Cursor::new(topology_b);
         let mut non_deleted = HashSet::new();
         let root = deserialize_topology_recursive(&mut buf, &mut non_deleted)?;
 
-        Ok(Box::new(KDTree {
+        Ok(KDTree {
             dim: metadata.dim,
             root,
             point_ids: non_deleted,
             total_nodes: metadata.total_nodes,
             deleted_count: metadata.deleted_count,
-        }))
-    }
-
-    fn serialize_topology_recursive(
-        &self,
-        current_opt: &Option<Box<KDTreeNode>>,
-        buffer: &mut Vec<u8>,
-    ) -> Result<(), DbError> {
-        if let Some(current) = current_opt {
-            let mut marker = NODE_MARKER_BYTE;
-            if current.is_deleted {
-                marker |= DELETED_MASK;
-            }
-            buffer.push(marker);
-
-            let uuid_bytes = current.indexed_vector.id.to_bytes_le();
-            buffer.extend_from_slice(&uuid_bytes);
-
-            // serialize left subtree topology
-            self.serialize_topology_recursive(&current.left, buffer)?;
-            // serialize right subtree topology
-            self.serialize_topology_recursive(&current.right, buffer)?;
-        } else {
-            buffer.push(SKIP_MARKER_BYTE);
-        }
-        Ok(())
+        })
     }
 }
 
+
+// helper functions
+
+fn serialize_topology_recursive(
+    current_opt: &Option<Box<KDTreeNode>>,
+    buffer: &mut Cursor<&mut Vec<u8>>,
+) -> Result<(), DbError> {
+    if let Some(current) = current_opt {
+        let mut marker = NODE_MARKER_BYTE;
+        if current.is_deleted {
+            marker |= DELETED_MASK;
+        }
+        buffer.write_all(&[marker]).map_err(|e| DbError::SerializationError(e.to_string()))?;
+
+        let uuid_bytes = current.indexed_vector.id.to_bytes_le();
+        buffer.write_all(&uuid_bytes).map_err(|e| DbError::SerializationError(e.to_string()))?;
+
+        // serialize left subtree topology
+        serialize_topology_recursive(&current.left, buffer)?;
+        // serialize right subtree topology
+        serialize_topology_recursive(&current.right, buffer)?;
+    } else {
+        buffer.write_all(&[SKIP_MARKER_BYTE]).map_err(|e| DbError::SerializationError(e.to_string()))?;
+    }
+    Ok(())
+}
+
+fn populate_vectors_recursive(node: &mut Option<Box<KDTreeNode>>, storage: &dyn StorageEngine) -> Result<(), DbError> {
+    if let Some(node) = node {
+        let vector = storage.get_vector(node.indexed_vector.id)?.ok_or(DbError::VectorNotFound(node.indexed_vector.id))?;
+        node.indexed_vector.vector = vector;
+
+        populate_vectors_recursive(&mut node.left, storage)?;
+        populate_vectors_recursive(&mut node.right, storage)?;
+    }
+    Ok(())
+}
+
 fn deserialize_topology_recursive(
-    buffer: &mut Cursor<Vec<u8>>,
+    buffer: &mut Cursor<&Vec<u8>>,
     non_deleted: &mut HashSet<PointId>,
 ) -> Result<Option<Box<KDTreeNode>>, DbError> {
     let mut current_marker: [u8; 1] = [0u8; 1];

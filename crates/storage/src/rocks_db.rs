@@ -1,6 +1,6 @@
 // Rewrite needed
 
-use crate::{StorageEngine, VectorPage};
+use crate::{StorageCheckpoint, StorageEngine, VectorPage};
 use bincode::{deserialize, serialize};
 use defs::{DbError, DenseVector, Payload, Point, PointId};
 use flate2::{Compression, read::GzDecoder, write::GzEncoder};
@@ -11,6 +11,7 @@ use std::{
 };
 use tar::{Archive, Builder};
 use tempfile::tempdir;
+use crate::StorageType;
 
 //TODO: Implement RocksDbStorage with necessary fields and implementations
 //TODO: Optimize the basic design
@@ -21,8 +22,9 @@ pub struct RocksDbStorage {
 
 pub enum RocksDBStorageError {
     RocksDBError(Error),
-    SerializationError,
 }
+
+pub const ROCKSDB_CHECKPOINT_FILENAME_MARKER: &str = "rocksdb";
 
 impl RocksDbStorage {
     // Creates new db or switches to existing db
@@ -184,7 +186,7 @@ impl StorageEngine for RocksDbStorage {
         Ok(Some((result, last_id)))
     }
 
-    fn checkpoint(&self, path: &Path) -> Result<(), DbError> {
+    fn checkpoint_at(&self, path: &Path) -> Result<StorageCheckpoint, DbError> {
         // flush db first for durability
         self.db
             .as_ref()
@@ -196,6 +198,10 @@ impl StorageEngine for RocksDbStorage {
                     e.into_string()
                 ))
             })?;
+
+        // filename is rocksdb-{uuid}.tar.gz
+        let checkpoint_filename = format!("{}-{}.tar.gz",ROCKSDB_CHECKPOINT_FILENAME_MARKER,uuid::Uuid::new_v4().to_string());
+        let checkpoint_path = path.join(checkpoint_filename);
 
         let temp_dir_parent = tempdir().unwrap();
         let temp_dir = temp_dir_parent.path().join("checkpoint");
@@ -211,7 +217,7 @@ impl StorageEngine for RocksDbStorage {
             .map_err(|e| DbError::StorageCheckpointError(e.into_string()))?;
 
         // compress the checkpoint into an archive
-        let tar_gz = File::create(path).map_err(|e| {
+        let tar_gz = File::create(checkpoint_path.clone()).map_err(|e| {
             DbError::StorageCheckpointError(format!("Couldn't create tar archive file: {}", e))
         })?;
         let enc = GzEncoder::new(tar_gz, Compression::default());
@@ -229,17 +235,25 @@ impl StorageEngine for RocksDbStorage {
             DbError::StorageCheckpointError(format!("Couldn't compress tar archive: {}", e))
         })?;
 
-        Ok(())
+        Ok(StorageCheckpoint { path: checkpoint_path, storage_type: crate::StorageType::RocksDb })
     }
 
-    fn restore_checkpoint(&mut self, path: &Path) -> Result<(), DbError> {
-        let tar_gz = File::open(path).map_err(|e| {
+    fn restore_checkpoint(&mut self, checkpoint: &StorageCheckpoint) -> Result<(), DbError> {
+        // enforce storage type
+        if checkpoint.storage_type != StorageType::RocksDb {
+            return Err(DbError::StorageCheckpointError(format!("Invalid storage type")));
+        }
+        // enforce filename marker - should have been enforced during StoraegCheckpoint::open anyway
+        let checkpoint_filename = checkpoint.path.file_name().ok_or(DbError::StorageCheckpointError("Could not read checkpoint filename".to_string()))?.to_str().ok_or(DbError::StorageCheckpointError("Could not read checkpoint filename".to_string()))?;
+        if !checkpoint.path.ends_with(".tar.gz") && checkpoint_filename.starts_with(ROCKSDB_CHECKPOINT_FILENAME_MARKER) {
+            return Err(DbError::StorageCheckpointError(format!("Invalid filename")));
+        }
+
+        let tar_gz = File::open(&checkpoint.path).map_err(|e| {
             DbError::StorageCheckpointError(format!("Couldn't open rocksdb checkpoint: {}", e))
         })?;
         let tar = GzDecoder::new(tar_gz);
         let mut archive = Archive::new(tar);
-        archive.set_unpack_xattrs(false);
-        archive.set_preserve_permissions(false);
 
         // remove existing stuff in data path
         self.db
@@ -392,14 +406,20 @@ mod tests {
             content: "Test".to_string(),
         });
 
-        assert!(db.insert_point(id1, vector.clone(), payload.clone()).is_ok());
+        assert!(
+            db.insert_point(id1, vector.clone(), payload.clone())
+                .is_ok()
+        );
 
-        db.checkpoint(&checkpoint_path)
+        let checkpoint = db.checkpoint_at(&checkpoint_path)
             .expect("Failed to create checkpoint");
 
-        assert!(db.insert_point(id2, vector.clone(), payload.clone()).is_ok());
+        assert!(
+            db.insert_point(id2, vector.clone(), payload.clone())
+                .is_ok()
+        );
 
-        db.restore_checkpoint(&checkpoint_path).unwrap();
+        db.restore_checkpoint(&checkpoint).unwrap();
 
         assert!(db.contains_point(id1).unwrap());
         assert!(!db.contains_point(id2).unwrap());

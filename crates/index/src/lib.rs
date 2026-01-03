@@ -1,9 +1,14 @@
-use defs::{DbError, DenseVector, IndexedVector, PointId, Similarity};
+use defs::{DbError, DenseVector, IndexedVector, Magic, PointId, Similarity};
+use storage::StorageEngine;
 
 pub mod flat;
 pub mod kd_tree;
 
-pub trait VectorIndex: Send + Sync + SerializableIndexer {
+mod deserialize;
+pub use crate::deserialize::*;
+
+
+pub trait VectorIndex: Send + Sync + SerializableIndex {
     fn insert(&mut self, vector: IndexedVector) -> Result<(), DbError>;
 
     // Returns true if point id existed and is deleted, else returns false
@@ -66,10 +71,18 @@ pub enum IndexType {
     HNSW,
 }
 
-pub trait SerializableIndexer {
+pub struct IndexSnapshot {
+    pub index_type: IndexType,
+    pub magic: Magic,
+    pub topology_b: Vec<u8>,
+    pub metadata_b: Vec<u8>,
+}
+
+pub trait SerializableIndex {
     fn serialize_topology(&self) -> Result<Vec<u8>, DbError>;
     fn serialize_metadata(&self) -> Result<Vec<u8>, DbError>;
-    fn magic_bytes(&self) -> [u8; 4];
 
-    // fn deserialize(metadata: Vec<u8>, topology: Vec<u8>) -> Result<Box<dyn VectorIndex>, DbError>;
+    fn snapshot(&self) -> Result<IndexSnapshot, DbError>;
+
+    fn populate_vectors(&mut self, storage: &dyn StorageEngine) -> Result<(), DbError>;
 }
