@@ -204,19 +204,19 @@ fn test_serialize_and_deserialize_topo() {
     let id4 = Uuid::new_v4();
 
     let v1 = IndexedVector {
-        id: id1.clone(),
+        id: id1,
         vector: vec![0.0, 0.0, 0.0, 0.0],
     };
     let v2 = IndexedVector {
-        id: id2.clone(),
+        id: id2,
         vector: vec![1.0, 0.0, 0.0, 0.0],
     };
     let v3 = IndexedVector {
-        id: id3.clone(),
+        id: id3,
         vector: vec![2.0, 0.0, 0.0, 0.0],
     };
     let v4 = IndexedVector {
-        id: id4.clone(),
+        id: id4,
         vector: vec![3.0, 0.0, 0.0, 0.0],
     };
 

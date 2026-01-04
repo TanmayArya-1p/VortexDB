@@ -442,7 +442,7 @@ mod tests {
 
         let reload_config = DbRestoreConfig {
             data_path: temp_dir.path().to_path_buf(),
-            snapshot_path: snapshot_path,
+            snapshot_path,
         };
 
         std::mem::drop(old_db);
