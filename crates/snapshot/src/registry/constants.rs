@@ -1,0 +1,1 @@
+pub const LOCAL_REGISTRY_LOCKFILE: &str = "LOCKFILE";

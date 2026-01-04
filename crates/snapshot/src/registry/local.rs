@@ -4,13 +4,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::registry::SnapshotMetaPage;
 use crate::registry::SnapshotRegistry;
+use crate::registry::{SnapshotMetaPage, constants::LOCAL_REGISTRY_LOCKFILE};
 use crate::{
     Snapshot, VectorDbRestore,
     metadata::{Metadata, SmallID},
 };
 use defs::DbError;
+use fs2::FileExt;
 
 pub struct LocalRegistry {
     pub dir: PathBuf,
@@ -20,6 +21,26 @@ pub struct LocalRegistry {
 impl LocalRegistry {
     pub fn new(dir: &Path) -> Result<LocalRegistry, DbError> {
         fs::create_dir_all(dir).map_err(|e| DbError::SnapshotRegistryError(e.to_string()))?;
+        let lock_file_path = dir.join(LOCAL_REGISTRY_LOCKFILE);
+        let lock_file = if !lock_file_path.exists() {
+            fs::File::create(&lock_file_path).map_err(|e| {
+                DbError::SnapshotRegistryError(format!("Couldn't create LOCKFILE : {}", e))
+            })?
+        } else {
+            fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&lock_file_path)
+                .map_err(|e| {
+                    DbError::SnapshotRegistryError(format!("Couldn't open LOCKFILE : {}", e))
+                })?
+        };
+
+        // try to acquire lockfile
+        lock_file
+            .try_lock_exclusive()
+            .map_err(|_| DbError::SnapshotRegistryError("Couldn't acquire LOCKFILE".to_string()))?;
+
         Ok(LocalRegistry {
             dir: dir.to_path_buf(),
             filename_cache: HashMap::new(),
@@ -128,6 +149,20 @@ impl SnapshotRegistry for LocalRegistry {
             Err(DbError::SnapshotRegistryError(
                 "Snapshot not found".to_string(),
             ))
+        }
+    }
+}
+
+impl Drop for LocalRegistry {
+    fn drop(&mut self) {
+        // remove exclusive lock on lockfile
+        let lock_file_path = self.dir.join(LOCAL_REGISTRY_LOCKFILE);
+        if let Ok(lock_file) = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&lock_file_path)
+        {
+            let _ = lock_file.unlock();
         }
     }
 }

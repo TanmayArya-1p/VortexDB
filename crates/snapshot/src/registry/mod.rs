@@ -16,6 +16,7 @@
 use std::path::Path;
 
 use defs::DbError;
+pub mod constants;
 pub mod local;
 use crate::{Snapshot, VectorDbRestore, metadata::Metadata};
 
