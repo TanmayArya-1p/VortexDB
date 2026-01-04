@@ -15,6 +15,8 @@ pub struct Metadata {
     pub sem_ver: Version,
 }
 
+const FILENAME_METADATA_SEPARATOR: &str = "-x";
+
 impl Metadata {
     pub fn new(id: Uuid, date: SystemTime, path: PathBuf, sem_ver: Version) -> Self {
         Metadata {
@@ -38,10 +40,12 @@ impl Metadata {
                 "Invalid UTF-8 in filename".to_string(),
             ))?;
 
-        let parts = filename.split('-').collect::<Vec<&str>>();
+        let parts = filename
+            .split(FILENAME_METADATA_SEPARATOR)
+            .collect::<Vec<&str>>();
 
         if parts.len() != 3 {
-            return Err(DbError::SnapshotError("Invalid filename".to_string()));
+            return Err(DbError::SnapshotError("Invalid filename1".to_string()));
         }
 
         let id = parts[0];
@@ -93,9 +97,11 @@ impl Display for Metadata {
         let dt_now_local: DateTime<Local> = self.date.into();
         write!(
             f,
-            "{}-{}-{}",
+            "{}{}{}{}{}",
             self.small_id,
+            FILENAME_METADATA_SEPARATOR,
             dt_now_local.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            FILENAME_METADATA_SEPARATOR,
             self.sem_ver
         )
     }

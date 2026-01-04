@@ -2093,6 +2093,7 @@ dependencies = [
  "defs",
  "flate2",
  "rocksdb",
+ "serde",
  "tar",
  "tempfile",
  "uuid",

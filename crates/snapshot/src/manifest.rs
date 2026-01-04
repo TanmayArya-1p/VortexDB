@@ -1,9 +1,11 @@
+use index::IndexType;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::{
     io::{BufReader, BufWriter, Error, Write},
     path::PathBuf,
 };
+use storage::StorageType;
 use uuid::Uuid;
 
 use crate::constants::MANIFEST_FILE;
@@ -18,6 +20,10 @@ pub struct Manifest {
     pub index_metadata_checksum: String,
     pub index_topo_checksum: String,
     pub storage_checkpoint_checksum: String,
+    pub index_type: IndexType,
+    pub storage_type: StorageType,
+    pub dimensions: usize,
+    pub storage_checkpoint_filename: String,
 }
 
 impl Manifest {

@@ -1,6 +1,7 @@
 // Rewrite needed
 
-use crate::{StorageCheckpoint, StorageEngine, VectorPage};
+use crate::StorageType;
+use crate::{StorageEngine, VectorPage, checkpoint::StorageCheckpoint};
 use bincode::{deserialize, serialize};
 use defs::{DbError, DenseVector, Payload, Point, PointId};
 use flate2::{Compression, read::GzDecoder, write::GzEncoder};
@@ -11,7 +12,6 @@ use std::{
 };
 use tar::{Archive, Builder};
 use tempfile::tempdir;
-use crate::StorageType;
 
 //TODO: Implement RocksDbStorage with necessary fields and implementations
 //TODO: Optimize the basic design
@@ -200,7 +200,11 @@ impl StorageEngine for RocksDbStorage {
             })?;
 
         // filename is rocksdb-{uuid}.tar.gz
-        let checkpoint_filename = format!("{}-{}.tar.gz",ROCKSDB_CHECKPOINT_FILENAME_MARKER,uuid::Uuid::new_v4().to_string());
+        let checkpoint_filename = format!(
+            "{}-{}.tar.gz",
+            ROCKSDB_CHECKPOINT_FILENAME_MARKER,
+            uuid::Uuid::new_v4()
+        );
         let checkpoint_path = path.join(checkpoint_filename);
 
         let temp_dir_parent = tempdir().unwrap();
@@ -235,18 +239,37 @@ impl StorageEngine for RocksDbStorage {
             DbError::StorageCheckpointError(format!("Couldn't compress tar archive: {}", e))
         })?;
 
-        Ok(StorageCheckpoint { path: checkpoint_path, storage_type: crate::StorageType::RocksDb })
+        Ok(StorageCheckpoint {
+            path: checkpoint_path,
+            storage_type: crate::StorageType::RocksDb,
+        })
     }
 
     fn restore_checkpoint(&mut self, checkpoint: &StorageCheckpoint) -> Result<(), DbError> {
         // enforce storage type
         if checkpoint.storage_type != StorageType::RocksDb {
-            return Err(DbError::StorageCheckpointError(format!("Invalid storage type")));
+            return Err(DbError::StorageCheckpointError(
+                "Invalid storage type".to_string(),
+            ));
         }
         // enforce filename marker - should have been enforced during StoraegCheckpoint::open anyway
-        let checkpoint_filename = checkpoint.path.file_name().ok_or(DbError::StorageCheckpointError("Could not read checkpoint filename".to_string()))?.to_str().ok_or(DbError::StorageCheckpointError("Could not read checkpoint filename".to_string()))?;
-        if !checkpoint.path.ends_with(".tar.gz") && checkpoint_filename.starts_with(ROCKSDB_CHECKPOINT_FILENAME_MARKER) {
-            return Err(DbError::StorageCheckpointError(format!("Invalid filename")));
+        let checkpoint_filename = checkpoint
+            .path
+            .file_name()
+            .ok_or(DbError::StorageCheckpointError(
+                "Could not read checkpoint filename".to_string(),
+            ))?
+            .to_str()
+            .ok_or(DbError::StorageCheckpointError(
+                "Could not read checkpoint filename".to_string(),
+            ))?;
+        if !checkpoint_filename.ends_with(".tar.gz")
+            || !checkpoint_filename.starts_with(ROCKSDB_CHECKPOINT_FILENAME_MARKER)
+        {
+            return Err(DbError::StorageCheckpointError(format!(
+                "Invalid filename4 {}",
+                checkpoint_filename
+            )));
         }
 
         let tar_gz = File::open(&checkpoint.path).map_err(|e| {
@@ -411,7 +434,8 @@ mod tests {
                 .is_ok()
         );
 
-        let checkpoint = db.checkpoint_at(&checkpoint_path)
+        let checkpoint = db
+            .checkpoint_at(&checkpoint_path)
             .expect("Failed to create checkpoint");
 
         assert!(

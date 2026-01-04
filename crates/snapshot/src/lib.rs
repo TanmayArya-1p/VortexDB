@@ -4,7 +4,7 @@ pub mod metadata;
 mod util;
 
 use crate::{
-    constants::{MANIFEST_FILE, SNAPSHOT_PARSER_VER, STORAGE_CHECKPOINT_FILE},
+    constants::{MANIFEST_FILE, SNAPSHOT_PARSER_VER},
     manifest::Manifest,
     util::{compress_archive, save_index_metadata, save_topology},
 };
@@ -12,17 +12,26 @@ use crate::{
 use chrono::{DateTime, Local};
 use defs::DbError;
 use flate2::read::GzDecoder;
-use index::{IndexSnapshot, VectorIndex};
+use index::{
+    IndexSnapshot, IndexType, VectorIndex, flat::index::FlatIndex, kd_tree::index::KDTree,
+};
 use semver::Version;
 use std::{
-    fs::File, path::{Path}, time::SystemTime
+    fs::File,
+    path::{Path, PathBuf},
+    sync::{Arc, RwLock},
+    time::SystemTime,
 };
-use storage::{StorageCheckpoint, StorageEngine, rocks_db::RocksDbStorage};
+use storage::{
+    StorageEngine, StorageType, checkpoint::StorageCheckpoint, rocks_db::RocksDbStorage,
+};
 use tar::Archive;
 use tempfile::tempdir;
 use uuid::Uuid;
 
 // TODO: implement snapshot engine that runs in its own thread and wakes up in regular intervals
+
+type VectorDbRestore = (Arc<dyn StorageEngine>, Arc<RwLock<dyn VectorIndex>>, usize);
 
 pub struct Snapshot {
     pub id: Uuid,
@@ -30,41 +39,52 @@ pub struct Snapshot {
     pub sem_ver: Version,
     pub index_snapshot: IndexSnapshot,
     pub storage_snapshot: StorageCheckpoint,
+    pub dimensions: usize,
 }
 
 impl Snapshot {
-    pub fn new(index_snapshot : IndexSnapshot, storage_snapshot : StorageCheckpoint) -> Self {
+    pub fn new(
+        index_snapshot: IndexSnapshot,
+        storage_snapshot: StorageCheckpoint,
+        dimensions: usize,
+    ) -> Result<Snapshot, DbError> {
         let id = Uuid::new_v4();
         let date = SystemTime::now();
 
-        Snapshot {
+        Ok(Snapshot {
             id,
             date,
             sem_ver: SNAPSHOT_PARSER_VER,
             index_snapshot,
             storage_snapshot,
-        }
+            dimensions,
+        })
     }
 
-    pub fn save(
-        &self,
-        path: &Path
-    ) -> Result<(), DbError> {
-
-        if !path.is_dir() {
+    pub fn save(&self, dir_path: &Path) -> Result<PathBuf, DbError> {
+        if !dir_path.is_dir() {
             return Err(DbError::SnapshotError(format!(
                 "Invalid path: {}",
-                path.display()
+                dir_path.display()
             )));
         }
 
         let temp_dir = tempdir().map_err(|e| DbError::SnapshotError(e.to_string()))?;
 
         // save index snapshots
-        let index_metadata_path =
-            save_index_metadata(temp_dir.path(), self.id, &self.index_snapshot.metadata_b, &self.index_snapshot.magic, dimensions)?;
+        let index_metadata_path = save_index_metadata(
+            temp_dir.path(),
+            self.id,
+            &self.index_snapshot.metadata_b,
+            &self.index_snapshot.magic,
+        )?;
 
-        let topology_path = save_topology(temp_dir.path(), self.id, &self.index_snapshot.topology_b, &self.index_snapshot.magic)?;
+        let topology_path = save_topology(
+            temp_dir.path(),
+            self.id,
+            &self.index_snapshot.topology_b,
+            &self.index_snapshot.magic,
+        )?;
 
         // take checksums
         let index_metadata_checksum = util::sha256_digest(&index_metadata_path)
@@ -76,6 +96,18 @@ impl Snapshot {
 
         let dt_now_local: DateTime<Local> = self.date.into();
 
+        // need this for manifest
+        let storage_checkpoint_filename = self
+            .storage_snapshot
+            .path
+            .file_name()
+            .ok_or(DbError::SnapshotError(
+                "Storage checkpoint was not properly made".to_string(),
+            ))?
+            .to_str()
+            .unwrap()
+            .to_string();
+
         // create manifest file
         let manifest = Manifest {
             id: self.id,
@@ -84,12 +116,15 @@ impl Snapshot {
             index_metadata_checksum,
             index_topo_checksum,
             storage_checkpoint_checksum,
+            storage_type: self.storage_snapshot.storage_type,
+            index_type: self.index_snapshot.index_type,
+            dimensions: self.dimensions,
+            storage_checkpoint_filename,
         };
 
         let manifest_path = manifest
             .save(temp_dir.path())
             .map_err(|e| DbError::SnapshotError(e.to_string()))?;
-
 
         let tar_filename = format!(
             "{}.tar.gz",
@@ -100,7 +135,7 @@ impl Snapshot {
                 constants::SNAPSHOT_PARSER_VER
             )
         );
-        let tar_gz_path = path.join(tar_filename);
+        let tar_gz_path = dir_path.join(tar_filename);
 
         compress_archive(
             &tar_gz_path,
@@ -110,22 +145,15 @@ impl Snapshot {
                 &self.storage_snapshot.path,
                 &manifest_path,
             ],
-            temp_dir.path(),
         )
         .map_err(|e| DbError::SnapshotError(e.to_string()))?;
-        Ok(())
+        Ok(tar_gz_path.to_path_buf())
     }
 
-    pub fn load(
-        path: &Path,
-        storage_data_path : &Path
-    ) -> Result<(Box<dyn VectorIndex>, Box<dyn StorageEngine>, usize), DbError> {
-
-        // only rocksdb is supported for snapshots as of now
-        let mut storage_engine = Box::new(RocksDbStorage::new(storage_data_path)).map_err(|e| DbError::SnapshotError(format!("Failed to reinitialize storage engine: {}",e)))?;
-
+    pub fn load(path: &Path, storage_data_path: &Path) -> Result<VectorDbRestore, DbError> {
         let tar_gz = File::open(path)
             .map_err(|e| DbError::SnapshotError(format!("Couldn't open snapshot: {}", e)))?;
+
         let tar = GzDecoder::new(tar_gz);
         let mut archive = Archive::new(tar);
 
@@ -170,16 +198,31 @@ impl Snapshot {
             ));
         }
 
+        // only rocksdb is supported for snapshots as of now
+        let mut storage_engine: Box<dyn StorageEngine> = match manifest.storage_type {
+            StorageType::RocksDb => Box::new(RocksDbStorage::new(storage_data_path)?),
+            _ => {
+                return Err(DbError::SnapshotError(
+                    "Unsupported storage type".to_string(),
+                ));
+            }
+        };
+
         let id = manifest.id;
-        let index_metadata_path = temp_dir.join(util::metadata_file_name(&id));
-        let topology_path = temp_dir.join(util::topology_file_name(&id));
-        let storage_checkpoint_path = temp_dir.join(STORAGE_CHECKPOINT_FILE);
+        let index_metadata_path = temp_dir.join(util::metadata_filename(&id));
+        let topology_path = temp_dir.join(util::topology_filename(&id));
+        let storage_checkpoint_path = temp_dir.join(manifest.storage_checkpoint_filename);
 
         if !index_metadata_path.exists()
             || !topology_path.exists()
             || !storage_checkpoint_path.exists()
         {
-            return Err(DbError::SnapshotError("Missing snapshot files".to_string()));
+            return Err(DbError::SnapshotError(format!(
+                "Missing snapshot files {} , {}, {}",
+                index_metadata_path.display(),
+                topology_path.display(),
+                storage_checkpoint_path.display()
+            )));
         }
 
         // match checksums
@@ -206,7 +249,7 @@ impl Snapshot {
             ));
         }
 
-        let (mgmeta, dimensions, meta_bytes) = util::read_index_metadata(&index_metadata_path)
+        let (mgmeta, meta_bytes) = util::read_index_metadata(&index_metadata_path)
             .map_err(|_| DbError::SnapshotError("Could not read metadata".to_string()))?;
         let (mgtopo, topo_bytes) = util::read_index_topology(&topology_path)
             .map_err(|_| DbError::SnapshotError("Could not read topology".to_string()))?;
@@ -217,15 +260,35 @@ impl Snapshot {
             ));
         }
 
-        storage_engine.restore_checkpoint(&storage_checkpoint_path)?;
-        let storage_engine_boxed: Box<dyn StorageEngine> = Box::new(storage_engine);
+        // validates if manifest storage type matches that in the filename of storage checkpoint
+        let storage_checkpoint = StorageCheckpoint::open(storage_checkpoint_path.as_path())?;
+        if storage_checkpoint.storage_type != manifest.storage_type {
+            return Err(DbError::SnapshotError(
+                "Storage type mismatch from manifest and checkpoint".to_string(),
+            ));
+        }
 
-        let vector_index : Box<dyn VectorIndex> = index::deserialize(
-            meta_bytes,
-            topo_bytes,
-            index::index_type_from_magic(mgmeta)?,
-        )?;
+        storage_engine.restore_checkpoint(&storage_checkpoint)?;
 
-        Ok((vector_index, storage_engine_boxed, dimensions))
+        let index_snapshot = IndexSnapshot {
+            index_type: manifest.index_type,
+            magic: mgmeta,
+            metadata_b: meta_bytes,
+            topology_b: topo_bytes,
+        };
+
+        // dynamic dispatch based on index type
+        let vector_index: Arc<RwLock<dyn VectorIndex>> = match manifest.index_type {
+            IndexType::Flat => Arc::new(RwLock::new(FlatIndex::deserialize(&index_snapshot)?)),
+            IndexType::KDTree => Arc::new(RwLock::new(KDTree::deserialize(&index_snapshot)?)),
+            _ => return Err(DbError::SnapshotError("Unsupported index type".to_string())),
+        };
+
+        vector_index
+            .write()
+            .map_err(|_| DbError::LockError)?
+            .populate_vectors(&*storage_engine)?;
+
+        Ok((storage_engine.into(), vector_index, manifest.dimensions))
     }
 }

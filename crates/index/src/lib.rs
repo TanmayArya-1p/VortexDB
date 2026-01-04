@@ -1,12 +1,9 @@
 use defs::{DbError, DenseVector, IndexedVector, Magic, PointId, Similarity};
+use serde::{Deserialize, Serialize};
 use storage::StorageEngine;
 
 pub mod flat;
 pub mod kd_tree;
-
-mod deserialize;
-pub use crate::deserialize::*;
-
 
 pub trait VectorIndex: Send + Sync + SerializableIndex {
     fn insert(&mut self, vector: IndexedVector) -> Result<(), DbError>;
@@ -64,7 +61,7 @@ pub fn distance(a: &DenseVector, b: &DenseVector, dist_type: Similarity) -> f32 
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum IndexType {
     Flat,
     KDTree,

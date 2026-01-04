@@ -10,13 +10,15 @@ use std::{io::Write, path::Path};
 use tar::Builder;
 use uuid::Uuid;
 
+type BinFileContent = (Magic, Vec<u8>);
+
 #[inline]
-pub fn metadata_file_name(id: &Uuid) -> String {
+pub fn metadata_filename(id: &Uuid) -> String {
     format!("{}-index-meta.bin", id)
 }
 
 #[inline]
-pub fn topology_file_name(id: &Uuid) -> String {
+pub fn topology_filename(id: &Uuid) -> String {
     format!("{}-index-topo.bin", id)
 }
 
@@ -45,17 +47,14 @@ pub fn save_index_metadata(
     uuid: Uuid,
     bytes: &[u8],
     magic: &Magic,
-    dimensions: usize,
 ) -> Result<PathBuf, DbError> {
-    let file_name = metadata_file_name(&uuid);
+    let file_name = metadata_filename(&uuid);
     let metadata_file_path = path.join(file_name);
 
     let mut file = std::fs::File::create(metadata_file_path.clone())
         .map_err(|e| DbError::SnapshotError(format!("Could not create metadata file: {}", e)))?;
 
     file.write_all(magic)
-        .map_err(|e| DbError::SnapshotError(format!("Could not write metadata file: {}", e)))?;
-    file.write_all(&dimensions.to_le_bytes())
         .map_err(|e| DbError::SnapshotError(format!("Could not write metadata file: {}", e)))?;
     file.write_all(&bytes.len().to_le_bytes())
         .map_err(|e| DbError::SnapshotError(format!("Could not write metadata file: {}", e)))?;
@@ -71,7 +70,7 @@ pub fn save_topology(
     bytes: &[u8],
     magic: &Magic,
 ) -> Result<PathBuf, DbError> {
-    let file_name = topology_file_name(&uuid);
+    let file_name = topology_filename(&uuid);
     let topology_file_path = path.join(file_name);
 
     let mut file = std::fs::File::create(topology_file_path.clone())
@@ -87,7 +86,7 @@ pub fn save_topology(
     Ok(topology_file_path)
 }
 
-pub fn compress_archive(path: &Path, files: &[&Path], base_dir: &Path) -> Result<(), Error> {
+pub fn compress_archive(path: &Path, files: &[&Path]) -> Result<(), Error> {
     let tar_gz = File::create(path)?;
     let enc = GzEncoder::new(tar_gz, Compression::default());
     let mut tar = Builder::new(enc);
@@ -102,7 +101,7 @@ pub fn compress_archive(path: &Path, files: &[&Path], base_dir: &Path) -> Result
     Ok(())
 }
 
-pub fn read_index_topology(path: &Path) -> Result<(Magic, Vec<u8>), DbError> {
+pub fn read_index_topology(path: &Path) -> Result<BinFileContent, DbError> {
     let mut file = File::open(path)
         .map_err(|e| DbError::SnapshotError(format!("Couldn't open topology file: {}", e)))?;
 
@@ -115,8 +114,8 @@ pub fn read_index_topology(path: &Path) -> Result<(Magic, Vec<u8>), DbError> {
     file.read_exact(&mut len_bytes).map_err(|e| {
         DbError::SnapshotError(format!("Couldn't read length from topology file: {}", e))
     })?;
-
     let len = usize::from_le_bytes(len_bytes);
+
     let mut bytes = vec![0u8; len];
     file.read_exact(&mut bytes).map_err(|e| {
         DbError::SnapshotError(format!("Couldn't read bytes from topology file: {}", e))
@@ -125,7 +124,7 @@ pub fn read_index_topology(path: &Path) -> Result<(Magic, Vec<u8>), DbError> {
     Ok((magic, bytes))
 }
 
-pub fn read_index_metadata(path: &Path) -> Result<(Magic, usize, Vec<u8>), DbError> {
+pub fn read_index_metadata(path: &Path) -> Result<BinFileContent, DbError> {
     let mut file = File::open(path)
         .map_err(|e| DbError::SnapshotError(format!("Couldn't open metadata file: {}", e)))?;
 
@@ -133,16 +132,6 @@ pub fn read_index_metadata(path: &Path) -> Result<(Magic, usize, Vec<u8>), DbErr
     file.read_exact(&mut magic).map_err(|e| {
         DbError::SnapshotError(format!("Couldn't read magic from metadata file: {}", e))
     })?;
-
-    let mut dimensions_bytes = [0u8; size_of::<usize>()];
-    file.read_exact(&mut dimensions_bytes).map_err(|e| {
-        DbError::SnapshotError(format!(
-            "Couldn't read dimensions from metadata file: {}",
-            e
-        ))
-    })?;
-
-    let dimensions = usize::from_le_bytes(dimensions_bytes);
 
     let mut len_bytes = [0u8; size_of::<usize>()];
     file.read_exact(&mut len_bytes).map_err(|e| {
@@ -155,5 +144,5 @@ pub fn read_index_metadata(path: &Path) -> Result<(Magic, usize, Vec<u8>), DbErr
         DbError::SnapshotError(format!("Couldn't read bytes from metadata file: {}", e))
     })?;
 
-    Ok((magic, dimensions, bytes))
+    Ok((magic, bytes))
 }

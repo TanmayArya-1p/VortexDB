@@ -1,12 +1,12 @@
 use super::FLAT_MAGIC_BYTES;
-use crate::{IndexSnapshot, SerializableIndex};
+use crate::IndexType;
 use crate::flat::index::FlatIndex;
+use crate::{IndexSnapshot, SerializableIndex};
 use defs::{DbError, IndexedVector};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read};
+use storage::StorageEngine;
 use uuid::Uuid;
-use crate::IndexType;
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlatIndexMetadata {
@@ -15,11 +15,23 @@ pub struct FlatIndexMetadata {
 
 impl FlatIndex {
     pub fn deserialize(
-        IndexSnapshot { index_type, magic, topology_b, metadata_b }: &IndexSnapshot
+        IndexSnapshot {
+            index_type,
+            magic,
+            topology_b,
+            metadata_b,
+        }: &IndexSnapshot,
     ) -> Result<FlatIndex, DbError> {
+        if index_type != &IndexType::Flat {
+            return Err(DbError::SerializationError(
+                "Invalid index type".to_string(),
+            ));
+        }
 
         if magic != &FLAT_MAGIC_BYTES {
-            return Err(DbError::SerializationError(format!("Invalid magic bytes")));
+            return Err(DbError::SerializationError(
+                "Invalid magic bytes".to_string(),
+            ));
         }
 
         let metadata: FlatIndexMetadata = bincode::deserialize(metadata_b).map_err(|e| {
@@ -50,12 +62,12 @@ impl FlatIndex {
 }
 
 impl SerializableIndex for FlatIndex {
-
     fn serialize_topology(&self) -> Result<Vec<u8>, DbError> {
         let mut buffer: Vec<u8> = Vec::new();
         for point in &self.index {
             buffer.extend_from_slice(&point.id.to_bytes_le());
         }
+
         Ok(buffer)
     }
 
@@ -68,13 +80,16 @@ impl SerializableIndex for FlatIndex {
         let metadata_bytes = bincode::serialize(&metadata).map_err(|e| {
             DbError::SerializationError(format!("Failed to serialize FlatIndex Metadata: {}", e))
         })?;
+
         buffer.extend_from_slice(&metadata_bytes);
         Ok(buffer)
     }
 
-    fn populate_vectors(&mut self, storage: &dyn storage::StorageEngine) -> Result<(), DbError> {
+    fn populate_vectors(&mut self, storage: &dyn StorageEngine) -> Result<(), DbError> {
         for item in &mut self.index {
-            item.vector = storage.get_vector(item.id)?.ok_or(DbError::VectorNotFound(item.id))?;
+            item.vector = storage
+                .get_vector(item.id)?
+                .ok_or(DbError::VectorNotFound(item.id))?;
         }
         Ok(())
     }
