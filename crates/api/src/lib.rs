@@ -217,8 +217,14 @@ mod tests {
 
     // TODO: Add more exhaustive tests
 
+    use std::{sync::Mutex, thread::sleep, time::Duration};
+
     use super::*;
     use defs::ContentType;
+    use snapshot::{
+        engine::SnapshotEngine,
+        registry::{SnapshotRegistry, local::LocalRegistry},
+    };
     use tempfile::{TempDir, tempdir};
 
     // Helper function to create a test database
@@ -453,5 +459,49 @@ mod tests {
 
         // check if vectors was restored
         assert!(loaded_db.get(point_id).unwrap().unwrap().vector.unwrap() == vec1);
+    }
+
+    #[test]
+    fn test_snapshot_engine() {
+        //TODO: write proper unit test
+        let (_db, _temp_dir) = create_test_db();
+
+        let db = Arc::new(Mutex::new(_db));
+        let registry = Arc::new(Mutex::new(
+            LocalRegistry::new(Path::new(
+                "/home/tanmay/Documents/CodingRepos/vector-db/crates/api/src/temp",
+            ))
+            .unwrap(),
+        ));
+
+        let interval = 5;
+        let last_k = 5;
+        let mut se = SnapshotEngine::new(interval, last_k, db.clone(), registry.clone());
+        sleep(Duration::from_secs(1));
+
+        se.start_worker().unwrap();
+        let vec1 = vec![0.0, 1.0, 2.0];
+
+        for _ in 0..30 {
+            sleep(Duration::from_secs(2));
+
+            println!(
+                "{}",
+                registry.lock().unwrap().get_latest_snapshot().unwrap()
+            );
+
+            let _ = db
+                .lock()
+                .unwrap()
+                .insert(
+                    vec1.clone(),
+                    Payload {
+                        content_type: ContentType::Text,
+                        content: format!("Test content {}", 0),
+                    },
+                )
+                .unwrap();
+        }
+        se.stop_worker().unwrap();
     }
 }

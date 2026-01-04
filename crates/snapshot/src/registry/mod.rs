@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use defs::DbError;
 pub mod constants;
 pub mod local;
-use crate::{Snapshot, VectorDbRestore, metadata::Metadata};
+use crate::{VectorDbRestore, metadata::Metadata};
 
 pub type SnapshotMetaPage = Vec<Metadata>;
 
@@ -26,9 +26,14 @@ pub const INFINITY_LIMIT: usize = 100000;
 pub const NO_OFFSET: usize = 0;
 
 pub trait SnapshotRegistry: Send + Sync {
-    fn add_snapshot(&mut self, snapshot: &Snapshot) -> Result<(), DbError>;
+    fn add_snapshot(&mut self, snapshot_path: &Path) -> Result<Metadata, DbError>;
+
     fn list_snapshots(&mut self, limit: usize, offset: usize) -> Result<SnapshotMetaPage, DbError>;
+    fn get_latest_snapshot(&mut self) -> Result<Metadata, DbError>;
+
+    fn get_metadata(&mut self, small_id: String) -> Result<Metadata, DbError>;
     fn remove_snapshot(&mut self, small_id: String) -> Result<Metadata, DbError>;
+
     fn load(
         &mut self,
         small_id: String,

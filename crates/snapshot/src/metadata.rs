@@ -33,13 +33,16 @@ impl Metadata {
         if !path.is_file() {
             return Err(DbError::SnapshotError("File not found".to_string()));
         }
-
         let filename = path
             .file_name()
             .ok_or(DbError::SnapshotError("No filename".to_string()))?
             .to_str()
             .ok_or(DbError::SnapshotError(
                 "Invalid UTF-8 in filename".to_string(),
+            ))?
+            .strip_suffix(".tar.gz")
+            .ok_or(DbError::SnapshotError(
+                "Snapshot filename doesnt end with .tar.gz".to_string(),
             ))?;
 
         let parts = filename

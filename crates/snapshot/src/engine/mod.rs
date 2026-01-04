@@ -12,7 +12,7 @@ pub struct SnapshotEngine {
     interval: Duration,
     last_k: usize,
     snapshot_queue: Arc<Mutex<VecDeque<Metadata>>>,
-    db: Arc<dyn SnapshottableDb>,
+    db: Arc<Mutex<dyn SnapshottableDb>>,
     registry: Arc<Mutex<dyn SnapshotRegistry>>,
     worker_cv: Arc<Condvar>,
     worker_running: Arc<Mutex<bool>>,
@@ -21,7 +21,7 @@ impl SnapshotEngine {
     pub fn new(
         interval: usize,
         last_k: usize,
-        db: Arc<dyn SnapshottableDb>,
+        db: Arc<Mutex<dyn SnapshottableDb>>,
         registry: Arc<Mutex<dyn SnapshotRegistry>>,
     ) -> Self {
         Self {
@@ -97,7 +97,7 @@ impl SnapshotEngine {
         interval: Duration,
         last_k: usize,
         worker_running: Arc<Mutex<bool>>,
-        db: Arc<dyn SnapshottableDb>,
+        db: Arc<Mutex<dyn SnapshottableDb>>,
         registry: Arc<Mutex<dyn SnapshotRegistry>>,
         worker_cv: Arc<Condvar>,
         snapshot_queue: Arc<Mutex<VecDeque<Metadata>>>,
@@ -113,9 +113,18 @@ impl SnapshotEngine {
             }
 
             let snapshot_path = db
+                .lock()
+                .unwrap()
                 .create_snapshot(registry.lock().unwrap().dir().as_path())
                 .unwrap();
             let snapshot_metadata = Metadata::parse(&snapshot_path).unwrap();
+
+            // add the snapshot to registry
+            registry
+                .lock()
+                .unwrap()
+                .add_snapshot(&snapshot_path)
+                .unwrap();
 
             {
                 let mut queue = snapshot_queue.lock().unwrap();
