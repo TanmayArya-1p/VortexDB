@@ -23,7 +23,7 @@ impl StorageCheckpoint {
     pub fn open(path: &Path) -> Result<StorageCheckpoint, DbError> {
         let filename = path
             .file_name()
-            .ok_or_else(|| DbError::StorageCheckpointError("Invalid filename2".to_string()))?
+            .ok_or_else(|| DbError::StorageCheckpointError("Invalid filename".to_string()))?
             .to_str()
             .ok_or_else(|| {
                 DbError::StorageCheckpointError("Invalid UTF-8 in filename".to_string())
@@ -31,7 +31,7 @@ impl StorageCheckpoint {
             .to_owned();
         let marker = filename
             .split_once("-")
-            .ok_or_else(|| DbError::StorageCheckpointError("Invalid filename3".to_string()))?
+            .ok_or_else(|| DbError::StorageCheckpointError("Invalid filename".to_string()))?
             .0;
 
         let storage_type = match marker {

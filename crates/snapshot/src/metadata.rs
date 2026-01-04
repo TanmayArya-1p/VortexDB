@@ -47,15 +47,15 @@ impl Metadata {
             .collect::<Vec<&str>>();
 
         if parts.len() != 3 {
-            return Err(DbError::SnapshotError("Invalid filename1".to_string()));
+            return Err(DbError::SnapshotError("Invalid filename".to_string()));
         }
 
-        let id = parts[0];
+        let id = parts[1];
         if id.len() != SMALL_ID_LEN {
             return Err(DbError::SnapshotError("Invalid UUID".to_string()));
         }
 
-        let date = chrono::DateTime::parse_from_rfc3339(parts[1])
+        let date = chrono::DateTime::parse_from_rfc3339(parts[0])
             .map_err(|_| DbError::SnapshotError("Invalid date".to_string()))?;
         let version = Version::parse(parts[2])
             .map_err(|_| DbError::SnapshotError("Invalid version".to_string()))?;
@@ -100,9 +100,9 @@ impl Display for Metadata {
         write!(
             f,
             "{}{}{}{}{}",
-            self.small_id,
-            FILENAME_METADATA_SEPARATOR,
             dt_now_local.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            FILENAME_METADATA_SEPARATOR,
+            self.small_id,
             FILENAME_METADATA_SEPARATOR,
             self.sem_ver
         )

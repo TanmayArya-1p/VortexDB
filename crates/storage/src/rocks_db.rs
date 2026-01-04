@@ -266,10 +266,9 @@ impl StorageEngine for RocksDbStorage {
         if !checkpoint_filename.ends_with(".tar.gz")
             || !checkpoint_filename.starts_with(ROCKSDB_CHECKPOINT_FILENAME_MARKER)
         {
-            return Err(DbError::StorageCheckpointError(format!(
-                "Invalid filename4 {}",
-                checkpoint_filename
-            )));
+            return Err(DbError::StorageCheckpointError(
+                "Invalid filename".to_string(),
+            ));
         }
 
         let tar_gz = File::open(&checkpoint.path).map_err(|e| {
