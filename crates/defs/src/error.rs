@@ -16,6 +16,7 @@ pub enum DbError {
     InvalidMagicBytes(String),
     VectorNotFound(uuid::Uuid),
     SnapshotRegistryError(String),
+    StorageEngineError(String),
 }
 
 #[derive(Debug)]

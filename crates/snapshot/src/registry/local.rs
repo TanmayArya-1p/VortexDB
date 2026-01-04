@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::registry::SnapshotRegistry;
+use crate::registry::{INFINITY_LIMIT, NO_OFFSET, SnapshotRegistry};
 use crate::registry::{SnapshotMetaPage, constants::LOCAL_REGISTRY_LOCKFILE};
 use crate::{
     Snapshot, VectorDbRestore,
@@ -85,6 +85,10 @@ impl SnapshotRegistry for LocalRegistry {
         Ok(res)
     }
 
+    fn list_alive_snapshots(&mut self) -> Result<SnapshotMetaPage, DbError> {
+        self.list_snapshots(INFINITY_LIMIT, NO_OFFSET)
+    }
+
     fn remove_snapshot(&mut self, small_id: SmallID) -> Result<Metadata, DbError> {
         if let Some(filename) = self.filename_cache.get(&small_id) {
             let snapshot_filepath = self.dir.join(filename);
@@ -114,6 +118,10 @@ impl SnapshotRegistry for LocalRegistry {
                 "Snapshot not found".to_string(),
             ))
         }
+    }
+
+    fn mark_dead(&mut self, small_id: String) -> Result<Metadata, DbError> {
+        self.remove_snapshot(small_id)
     }
 
     fn load(
@@ -150,6 +158,10 @@ impl SnapshotRegistry for LocalRegistry {
                 "Snapshot not found".to_string(),
             ))
         }
+    }
+
+    fn dir(&self) -> PathBuf {
+        self.dir.clone()
     }
 }
 

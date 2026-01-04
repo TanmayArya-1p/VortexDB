@@ -13,7 +13,7 @@
 //             - make a proxy wrapper that deletes the temp file on destroy - caching is internal implementation
 //
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use defs::DbError;
 pub mod constants;
@@ -25,7 +25,7 @@ pub type SnapshotMetaPage = Vec<Metadata>;
 pub const INFINITY_LIMIT: usize = 100000;
 pub const NO_OFFSET: usize = 0;
 
-pub trait SnapshotRegistry {
+pub trait SnapshotRegistry: Send + Sync {
     fn add_snapshot(&mut self, snapshot: &Snapshot) -> Result<(), DbError>;
     fn list_snapshots(&mut self, limit: usize, offset: usize) -> Result<SnapshotMetaPage, DbError>;
     fn remove_snapshot(&mut self, small_id: String) -> Result<Metadata, DbError>;
@@ -34,4 +34,9 @@ pub trait SnapshotRegistry {
         small_id: String,
         storage_data_path: &Path,
     ) -> Result<VectorDbRestore, DbError>;
+    fn dir(&self) -> PathBuf;
+
+    // in the future this could be used to maybe move an old/stale snapshot to cold storage or to a remote registry
+    fn mark_dead(&mut self, small_id: String) -> Result<Metadata, DbError>; // current behaviour is to call remove_snapshot;
+    fn list_alive_snapshots(&mut self) -> Result<SnapshotMetaPage, DbError>; // current behaviour is to call list_snapshots;
 }

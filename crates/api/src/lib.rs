@@ -1,4 +1,4 @@
-use defs::{DbError, IndexedVector, Similarity};
+use defs::{DbError, IndexedVector, Similarity, SnapshottableDb};
 
 use defs::{DenseVector, Payload, Point, PointId};
 use index::kd_tree::index::KDTree;
@@ -132,9 +132,10 @@ impl VectorDb {
 
         Ok(inserted)
     }
+}
 
-    // create snapshot at specificied directory
-    pub fn create_snapshot(&self, dir_path: &Path) -> Result<PathBuf, DbError> {
+impl SnapshottableDb for VectorDb {
+    fn create_snapshot(&self, dir_path: &Path) -> Result<PathBuf, DbError> {
         if !dir_path.is_dir() {
             return Err(DbError::SnapshotError(format!(
                 "Invalid path: {}",
