@@ -5,16 +5,16 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-semver = "1.0.27"
-defs.workspace = true
-index.workspace = true
-storage.workspace = true
-tempfile.workspace = true
-uuid.workspace = true
-sha2 = "0.10.9"
-flate2 = "1.1.5"
 chrono.workspace = true
-tar = "0.4.44"
+data-encoding = "2.9.0"
+defs.workspace = true
+flate2 = "1.1.5"
+index.workspace = true
+semver = "1.0.27"
 serde.workspace = true
 serde_json.workspace = true
-data-encoding = "2.9.0"
+sha2 = "0.10.9"
+storage.workspace = true
+tar = "0.4.44"
+tempfile.workspace = true
+uuid.workspace = true

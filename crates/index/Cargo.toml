@@ -10,5 +10,5 @@ license.workspace = true
 bincode.workspace = true
 defs.workspace = true
 serde.workspace = true
-uuid.workspace = true
 storage.workspace = true
+uuid.workspace = true

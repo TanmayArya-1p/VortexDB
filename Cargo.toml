@@ -50,6 +50,6 @@ grpc = { path = "crates/grpc" }
 http = { path = "crates/http" }
 index = { path = "crates/index" }
 server = { path = "crates/server" }
+snapshot = { path = "crates/snapshot" }
 storage = { path = "crates/storage" }
 tui = { path = "crates/tui" }
-snapshot = { path = "crates/snapshot" }
