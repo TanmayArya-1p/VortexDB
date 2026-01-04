@@ -15,6 +15,7 @@ pub enum DbError {
     StorageCheckpointError(String),
     InvalidMagicBytes(String),
     VectorNotFound(uuid::Uuid),
+    SnapshotRegistryError(String),
 }
 
 #[derive(Debug)]

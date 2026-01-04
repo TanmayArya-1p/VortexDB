@@ -7,9 +7,11 @@ use std::{fmt::Display, path::PathBuf, time::SystemTime};
 use std::{fs, path::Path};
 use uuid::Uuid;
 
+pub type SmallID = String;
+
 // Metadata is the data that can be parsed from the snapshot filename
 pub struct Metadata {
-    pub small_id: String,
+    pub small_id: SmallID,
     pub date: SystemTime,
     pub path: PathBuf,
     pub sem_ver: Version,
