@@ -31,8 +31,6 @@ use tar::Archive;
 use tempfile::tempdir;
 use uuid::Uuid;
 
-// TODO: implement snapshot engine that runs in its own thread and wakes up in regular intervals
-
 type VectorDbRestore = (Arc<dyn StorageEngine>, Arc<RwLock<dyn VectorIndex>>, usize);
 
 pub struct Snapshot {

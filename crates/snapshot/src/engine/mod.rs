@@ -92,7 +92,7 @@ impl SnapshotEngine {
         Ok(())
     }
 
-    // TODO: ask someone about sync issues (i dont think there are any)
+    // TODO: fix sync issues if any (i dont think there are any)
     fn worker(
         interval: Duration,
         last_k: usize,
