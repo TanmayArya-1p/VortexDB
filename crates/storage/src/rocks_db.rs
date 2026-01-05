@@ -420,7 +420,6 @@ mod tests {
     fn test_create_and_load_checkpoint() {
         let (mut db, temp_dir) = create_test_db();
 
-        let checkpoint_path = temp_dir.path().join("temp-checkpoint.tar.gz");
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
 
@@ -436,7 +435,7 @@ mod tests {
         );
 
         let checkpoint = db
-            .checkpoint_at(&checkpoint_path)
+            .checkpoint_at(temp_dir.path())
             .expect("Failed to create checkpoint");
 
         assert!(

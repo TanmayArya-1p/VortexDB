@@ -229,7 +229,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let config = DbConfig {
             storage_type: StorageType::RocksDb,
-            index_type: IndexType::KDTree,
+            index_type: IndexType::Flat,
             data_path: temp_dir.path().to_path_buf(),
             dimension: 3,
         };
