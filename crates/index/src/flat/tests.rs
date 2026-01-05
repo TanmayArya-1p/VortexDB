@@ -197,7 +197,6 @@ fn test_default() {
 
 #[test]
 fn test_serialize_and_deserialize_topo() {
-    // TODO: currently only tests topology and not vector restore; requires InMemory storage for vector restore testing (RocksDB seems to heavy to be used here for testing)
     let id1 = Uuid::new_v4();
     let id2 = Uuid::new_v4();
     let id3 = Uuid::new_v4();
