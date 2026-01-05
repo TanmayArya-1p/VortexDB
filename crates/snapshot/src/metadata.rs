@@ -10,6 +10,7 @@ use uuid::Uuid;
 pub type SmallID = String;
 
 // Metadata is the data that can be parsed from the snapshot filename
+#[derive(Debug, Clone)]
 pub struct Metadata {
     pub small_id: SmallID,
     pub date: SystemTime,

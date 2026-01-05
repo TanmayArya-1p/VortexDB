@@ -9,8 +9,7 @@ use defs::{DbError, SnapshottableDb};
 use crate::{metadata::Metadata, registry::SnapshotRegistry};
 
 pub struct SnapshotEngine {
-    interval: Duration,
-    last_k: usize,
+    last_k: usize, // only retain the last k snapshots on disk. old/stale snapshots are marked as dead on the registry
     snapshot_queue: Arc<Mutex<VecDeque<Metadata>>>,
     db: Arc<Mutex<dyn SnapshottableDb>>,
     registry: Arc<Mutex<dyn SnapshotRegistry>>,
@@ -19,13 +18,11 @@ pub struct SnapshotEngine {
 }
 impl SnapshotEngine {
     pub fn new(
-        interval: usize,
         last_k: usize,
         db: Arc<Mutex<dyn SnapshottableDb>>,
         registry: Arc<Mutex<dyn SnapshotRegistry>>,
     ) -> Self {
         Self {
-            interval: Duration::from_secs(interval as u64),
             last_k,
             snapshot_queue: Arc::new(Mutex::new(VecDeque::new())),
             db,
@@ -48,7 +45,7 @@ impl SnapshotEngine {
         Ok(())
     }
 
-    // notify the worker to take a snapshot now
+    // notify the worker thread to take a snapshot now
     pub fn worker_snapshot(&mut self) -> Result<(), DbError> {
         // acquire lock for worker_running
         let worker_running = self.worker_running.lock().map_err(|_| DbError::LockError)?;
@@ -71,7 +68,17 @@ impl SnapshotEngine {
         )
     }
 
-    pub fn start_worker(&mut self) -> Result<(), DbError> {
+    pub fn list_alive_snapshots(&mut self) -> Result<Vec<Metadata>, DbError> {
+        Ok(self
+            .snapshot_queue
+            .lock()
+            .map_err(|_| DbError::LockError)?
+            .iter()
+            .cloned()
+            .collect())
+    }
+
+    pub fn start_worker(&mut self, interval: i64) -> Result<(), DbError> {
         // acquire lock for worker_running
         let mut worker_running = self.worker_running.lock().map_err(|_| DbError::LockError)?;
         if *worker_running {
@@ -86,12 +93,12 @@ impl SnapshotEngine {
         let registry_clone = Arc::clone(&self.registry);
         let worker_cv_clone = Arc::clone(&self.worker_cv);
         let snapshot_queue_clone = Arc::clone(&self.snapshot_queue);
-        let interval_clone = self.interval;
         let last_k_clone = self.last_k;
 
+        let dur_interval = Duration::from_secs(interval as u64);
         let _ = std::thread::spawn(move || {
             Self::worker(
-                interval_clone,
+                dur_interval,
                 last_k_clone,
                 worker_running_clone,
                 db_clone,

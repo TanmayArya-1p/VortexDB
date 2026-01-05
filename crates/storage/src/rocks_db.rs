@@ -282,6 +282,9 @@ impl StorageEngine for RocksDbStorage {
             .as_ref()
             .ok_or(DbError::StorageInitializationError)?
             .cancel_all_background_work(true);
+        // drop db early
+        self.db = None;
+
         std::fs::remove_dir_all(&self.path).map_err(|e| {
             DbError::StorageCheckpointError(format!("Couldn't remove existing data: {}", e))
         })?;
@@ -296,7 +299,6 @@ impl StorageEngine for RocksDbStorage {
         })?;
 
         // reinitialize db
-        self.db = None;
         self.db = Some(Self::initialize_db(&self.path)?);
 
         Ok(())

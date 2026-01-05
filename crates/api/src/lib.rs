@@ -217,14 +217,11 @@ mod tests {
 
     // TODO: Add more exhaustive tests
 
-    use std::{sync::Mutex, thread::sleep, time::Duration};
+    use std::sync::Mutex;
 
     use super::*;
     use defs::ContentType;
-    use snapshot::{
-        engine::SnapshotEngine,
-        registry::{SnapshotRegistry, local::LocalRegistry},
-    };
+    use snapshot::{engine::SnapshotEngine, registry::local::LocalRegistry};
     use tempfile::{TempDir, tempdir};
 
     // Helper function to create a test database
@@ -441,11 +438,10 @@ mod tests {
                 v1.clone(),
                 Payload {
                     content_type: ContentType::Text,
-                    content: "test".to_string()
+                    content: "test".to_string(),
                 },
             )
             .unwrap();
-
 
         let id2 = old_db
             .insert(
@@ -456,7 +452,6 @@ mod tests {
                 },
             )
             .unwrap();
-
 
         let temp_snapshot_dir = tempdir().unwrap();
         let snapshot_path = old_db.create_snapshot(temp_snapshot_dir.path()).unwrap();
@@ -482,8 +477,7 @@ mod tests {
 
         assert!(loaded_db.get(id1).unwrap_or(None).is_some());
         assert!(loaded_db.get(id2).unwrap_or(None).is_some());
-        assert!(!loaded_db.get(id3).unwrap_or(None).is_some()); // v3 was inserted after snapshot was taken
-
+        assert!(loaded_db.get(id3).unwrap_or(None).is_none()); // v3 was inserted after snapshot was taken
 
         // vector restore check
         assert!(loaded_db.get(id1).unwrap().unwrap().vector.unwrap() == v1);
@@ -493,43 +487,80 @@ mod tests {
     #[test]
     fn test_snapshot_engine() {
         let (_db, _temp_dir) = create_test_db();
-
         let db = Arc::new(Mutex::new(_db));
+
+        let registry_tempdir = tempdir().unwrap();
+
         let registry = Arc::new(Mutex::new(
-            LocalRegistry::new(Path::new(
-                "/home/tanmay/Documents/CodingRepos/vector-db/crates/api/src/temp",
-            ))
-            .unwrap(),
+            LocalRegistry::new(registry_tempdir.path()).unwrap(),
         ));
 
-        let interval = 5;
-        let last_k = 5;
-        let mut se = SnapshotEngine::new(interval, last_k, db.clone(), registry.clone());
-        sleep(Duration::from_secs(1));
+        let last_k = 4;
+        let mut se = SnapshotEngine::new(last_k, db.clone(), registry.clone());
 
-        se.start_worker().unwrap();
-        let vec1 = vec![0.0, 1.0, 2.0];
+        let v1 = vec![0.0, 1.0, 2.0];
+        let v2 = vec![3.0, 4.0, 5.0];
+        let v3 = vec![6.0, 7.0, 8.0];
 
-        for _ in 0..30 {
-            sleep(Duration::from_secs(2));
+        let test_vectors = vec![v1.clone(), v2.clone(), v3.clone()];
+        let mut inserted_ids = Vec::new();
 
-            println!(
-                "{}",
-                registry.lock().unwrap().get_latest_snapshot().unwrap()
-            );
-
-            let _ = db
+        for (i, vector) in test_vectors.clone().into_iter().enumerate() {
+            se.snapshot().unwrap();
+            let id = db
                 .lock()
                 .unwrap()
                 .insert(
-                    vec1.clone(),
+                    vector.clone(),
                     Payload {
                         content_type: ContentType::Text,
-                        content: format!("Test content {}", 0),
+                        content: format!("{}", i),
                     },
                 )
                 .unwrap();
+            inserted_ids.push(id);
         }
-        se.stop_worker().unwrap();
+        se.snapshot().unwrap();
+        let snapshots = se.list_alive_snapshots().unwrap();
+
+        // asserting these cases:
+        // snapshot 0 : no vectors
+        // snapshot 1 : v1
+        // snapshot 2 : v1, v2
+        // snapshot 3 : v1, v2, v3
+
+        std::mem::drop(db);
+        std::mem::drop(se);
+
+        for (i, snapshot) in snapshots.iter().enumerate() {
+            let temp_dir = tempdir().unwrap();
+            let db = restore_from_snapshot(&DbRestoreConfig {
+                data_path: temp_dir.path().to_path_buf(),
+                snapshot_path: snapshot.path.clone(),
+            })
+            .unwrap();
+            for j in 0..i {
+                // test if point is present
+                assert!(db.get(inserted_ids[j]).unwrap_or(None).is_some());
+                // test vector restore
+                assert!(
+                    db.get(inserted_ids[j]).unwrap().unwrap().vector.unwrap() == test_vectors[j]
+                );
+                // test payload restore
+                assert!(
+                    db.get(inserted_ids[j])
+                        .unwrap()
+                        .unwrap()
+                        .payload
+                        .unwrap()
+                        .content
+                        == format!("{}", j)
+                );
+            }
+            for absent_id in inserted_ids.iter().skip(i) {
+                assert!(db.get(*absent_id).unwrap_or(None).is_none());
+            }
+            std::mem::drop(db);
+        }
     }
 }
