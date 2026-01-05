@@ -432,20 +432,45 @@ mod tests {
     fn test_create_and_load_snapshot() {
         let (old_db, temp_dir) = create_test_db();
 
-        let vec1 = vec![0.0, 1.0, 2.0];
-        let point_id = old_db
+        let v1 = vec![0.0, 1.0, 2.0];
+        let v2 = vec![3.0, 4.0, 5.0];
+        let v3 = vec![6.0, 7.0, 8.0];
+
+        let id1 = old_db
             .insert(
-                vec1.clone(),
+                v1.clone(),
                 Payload {
                     content_type: ContentType::Text,
-                    content: format!("Test content {}", 0),
+                    content: "test".to_string()
                 },
             )
             .unwrap();
 
-        let temp_snapshot_dir = tempdir().unwrap();
 
+        let id2 = old_db
+            .insert(
+                v2.clone(),
+                Payload {
+                    content_type: ContentType::Text,
+                    content: "test".to_string(),
+                },
+            )
+            .unwrap();
+
+
+        let temp_snapshot_dir = tempdir().unwrap();
         let snapshot_path = old_db.create_snapshot(temp_snapshot_dir.path()).unwrap();
+
+        // insert v3 after snapshot
+        let id3 = old_db
+            .insert(
+                v3.clone(),
+                Payload {
+                    content_type: ContentType::Text,
+                    content: "test".to_string(),
+                },
+            )
+            .unwrap();
 
         let reload_config = DbRestoreConfig {
             data_path: temp_dir.path().to_path_buf(),
@@ -455,15 +480,18 @@ mod tests {
         std::mem::drop(old_db);
         let loaded_db = restore_from_snapshot(&reload_config).unwrap();
 
-        assert!(loaded_db.get(point_id).is_ok());
+        assert!(loaded_db.get(id1).unwrap_or(None).is_some());
+        assert!(loaded_db.get(id2).unwrap_or(None).is_some());
+        assert!(!loaded_db.get(id3).unwrap_or(None).is_some()); // v3 was inserted after snapshot was taken
 
-        // check if vectors was restored
-        assert!(loaded_db.get(point_id).unwrap().unwrap().vector.unwrap() == vec1);
+
+        // vector restore check
+        assert!(loaded_db.get(id1).unwrap().unwrap().vector.unwrap() == v1);
+        assert!(loaded_db.get(id2).unwrap().unwrap().vector.unwrap() == v2);
     }
 
     #[test]
     fn test_snapshot_engine() {
-        //TODO: write proper unit test
         let (_db, _temp_dir) = create_test_db();
 
         let db = Arc::new(Mutex::new(_db));

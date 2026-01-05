@@ -48,7 +48,8 @@ impl SnapshotEngine {
         Ok(())
     }
 
-    pub fn snapshot(&mut self) -> Result<(), DbError> {
+    // notify the worker to take a snapshot now
+    pub fn worker_snapshot(&mut self) -> Result<(), DbError> {
         // acquire lock for worker_running
         let worker_running = self.worker_running.lock().map_err(|_| DbError::LockError)?;
         if !*worker_running {
@@ -58,6 +59,16 @@ impl SnapshotEngine {
         }
         self.worker_cv.notify_one();
         Ok(())
+    }
+
+    // take a snapshot on the callers thread
+    pub fn snapshot(&mut self) -> Result<(), DbError> {
+        Self::take_snapshot(
+            &mut self.db,
+            &mut self.registry,
+            &mut self.snapshot_queue,
+            self.last_k,
+        )
     }
 
     pub fn start_worker(&mut self) -> Result<(), DbError> {
@@ -92,15 +103,49 @@ impl SnapshotEngine {
         Ok(())
     }
 
+    // helper function to take snapshot
+    fn take_snapshot(
+        db: &mut Arc<Mutex<dyn SnapshottableDb>>,
+        registry: &mut Arc<Mutex<dyn SnapshotRegistry>>,
+        snapshot_queue: &mut Arc<Mutex<VecDeque<Metadata>>>,
+        last_k: usize,
+    ) -> Result<(), DbError> {
+        let snapshot_path = db
+            .lock()
+            .unwrap()
+            .create_snapshot(registry.lock().unwrap().dir().as_path())
+            .unwrap();
+        let snapshot_metadata = Metadata::parse(&snapshot_path).unwrap();
+
+        // add the snapshot to registry
+        registry
+            .lock()
+            .unwrap()
+            .add_snapshot(&snapshot_path)
+            .unwrap();
+
+        {
+            let mut queue = snapshot_queue.lock().unwrap();
+            queue.push_back(snapshot_metadata);
+
+            while queue.len() > last_k {
+                let old = queue.pop_front().unwrap();
+                registry.lock().unwrap().mark_dead(old.small_id).unwrap();
+            }
+            // drop queue lock
+        }
+        Ok(())
+    }
+
     // TODO: fix sync issues if any (i dont think there are any)
     fn worker(
         interval: Duration,
         last_k: usize,
         worker_running: Arc<Mutex<bool>>,
-        db: Arc<Mutex<dyn SnapshottableDb>>,
-        registry: Arc<Mutex<dyn SnapshotRegistry>>,
+        mut db: Arc<Mutex<dyn SnapshottableDb>>,
+        mut registry: Arc<Mutex<dyn SnapshotRegistry>>,
         worker_cv: Arc<Condvar>,
-        snapshot_queue: Arc<Mutex<VecDeque<Metadata>>>,
+        mut snapshot_queue: Arc<Mutex<VecDeque<Metadata>>>,
     ) {
         loop {
             // acquire the lock and exit if its false
@@ -112,31 +157,7 @@ impl SnapshotEngine {
                 break;
             }
 
-            let snapshot_path = db
-                .lock()
-                .unwrap()
-                .create_snapshot(registry.lock().unwrap().dir().as_path())
-                .unwrap();
-            let snapshot_metadata = Metadata::parse(&snapshot_path).unwrap();
-
-            // add the snapshot to registry
-            registry
-                .lock()
-                .unwrap()
-                .add_snapshot(&snapshot_path)
-                .unwrap();
-
-            {
-                let mut queue = snapshot_queue.lock().unwrap();
-                queue.push_back(snapshot_metadata);
-
-                while queue.len() > last_k {
-                    let old = queue.pop_front().unwrap();
-                    registry.lock().unwrap().mark_dead(old.small_id).unwrap();
-                }
-
-                // drop queue lock
-            }
+            Self::take_snapshot(&mut db, &mut registry, &mut snapshot_queue, last_k).unwrap();
 
             let _ = worker_cv.wait_timeout(worker_running, interval).unwrap();
         }
