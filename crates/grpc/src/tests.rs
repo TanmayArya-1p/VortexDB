@@ -1,6 +1,8 @@
 use crate::constants::AUTHORIZATION_HEADER_KEY;
 use crate::service::vectordb::vector_db_client::VectorDbClient;
-use crate::service::vectordb::{DenseVector, InsertVectorRequest, Payload, PointId, SearchRequest};
+use crate::service::vectordb::{
+    ContentType, DenseVector, InsertVectorRequest, Payload, PointId, SearchRequest,
+};
 use crate::service::{VectorDBService, run_server};
 use crate::utils::ServerEndpoint;
 use api::DbConfig;
@@ -95,7 +97,10 @@ async fn test_insert_vector_rpc() {
         vector: Some(DenseVector {
             values: test_vec.clone(),
         }),
-        payload: Some(Payload::default()),
+        payload: Some(Payload {
+            content_type: ContentType::Text as i32,
+            content: "test".to_string(),
+        }),
     });
     append_test_auth_header(&mut request, TEST_AUTH_BEARER_TOKEN);
 
@@ -115,6 +120,11 @@ async fn test_insert_vector_rpc() {
     assert!(resp.is_ok());
     let point = resp.unwrap().into_inner();
     assert_eq!(point.vector.unwrap().values, test_vec);
+
+    // payload assertions
+    let payload = point.payload.unwrap();
+    assert_eq!(payload.content_type, ContentType::Text as i32);
+    assert_eq!(payload.content, "test");
 
     // insert a new vector with mismatched dimensions
     let mut request = tonic::Request::new(InsertVectorRequest {
