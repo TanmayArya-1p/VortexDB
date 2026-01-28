@@ -4,11 +4,17 @@ use defs::{DbError, Dimension, PointId, Similarity};
 use serde::{Deserialize, Serialize};
 use storage::StorageEngine;
 
-use crate::{IndexSnapshot, IndexType, SerializableIndex, hnsw::{HNSW_MAGIC_BYTES, HnswIndex, types::{LevelGenerator, Node, PointIndexation}}};
+use crate::{
+    IndexSnapshot, IndexType, SerializableIndex,
+    hnsw::{
+        HNSW_MAGIC_BYTES, HnswIndex,
+        types::{LevelGenerator, Node, PointIndexation},
+    },
+};
 
 #[repr(packed)]
 #[derive(Serialize, Deserialize)]
-pub struct HnswMetadataPack{
+pub struct HnswMetadataPack {
     pub ef_construction: usize,
     pub data_dimension: Dimension,
     pub ef: usize,
@@ -26,7 +32,6 @@ pub struct HnswIndexPack {
     pub level_scale: f64,
 }
 
-
 impl SerializableIndex for HnswIndex {
     fn serialize_topology(&self) -> Result<Vec<u8>, DbError> {
         let mut buffer = Vec::new();
@@ -42,7 +47,8 @@ impl SerializableIndex for HnswIndex {
             level_scale: self.index.level_generator.level_scale,
         };
 
-        let index_bytes = bincode::serialize(&index_pack).map_err(|e| DbError::SerializationError(e.to_string()))?;
+        let index_bytes = bincode::serialize(&index_pack)
+            .map_err(|e| DbError::SerializationError(e.to_string()))?;
         buffer.extend(index_bytes);
 
         return Ok(buffer);
@@ -54,10 +60,11 @@ impl SerializableIndex for HnswIndex {
             ef_construction: self.ef_construction,
             data_dimension: self.data_dimension,
             ef: self.ef,
-            similarity: self.similarity
+            similarity: self.similarity,
         };
 
-        let metadata_bytes = bincode::serialize(&index_pack).map_err(|e| DbError::SerializationError(e.to_string()))?;
+        let metadata_bytes = bincode::serialize(&index_pack)
+            .map_err(|e| DbError::SerializationError(e.to_string()))?;
         buffer.extend(metadata_bytes);
         return Ok(buffer);
     }
@@ -76,14 +83,17 @@ impl SerializableIndex for HnswIndex {
     fn populate_vectors(&mut self, storage: &dyn StorageEngine) -> Result<(), DbError> {
         // assumes index topology is restored
         for id in self.index.nodes.keys() {
-            let vec = storage.get_vector(*id)?.ok_or(DbError::SerializationError(format!("Failed to locate vector for id: {} in storage", id)))?;
+            let vec = storage
+                .get_vector(*id)?
+                .ok_or(DbError::SerializationError(format!(
+                    "Failed to locate vector for id: {} in storage",
+                    id
+                )))?;
             self.cache.insert(*id, vec);
         }
         Ok(())
     }
 }
-
-
 
 impl HnswIndex {
     pub fn deserialize(
@@ -110,7 +120,7 @@ impl HnswIndex {
             DbError::SerializationError(format!("Failed to deserialize HNSW Metadata: {}", e))
         })?;
 
-        let index_pack : HnswIndexPack = bincode::deserialize(topology_b).map_err(|e| {
+        let index_pack: HnswIndexPack = bincode::deserialize(topology_b).map_err(|e| {
             DbError::SerializationError(format!("Failed to deserialize HNSW Index: {}", e))
         })?;
 
@@ -121,9 +131,9 @@ impl HnswIndex {
             points_by_layer: index_pack.points_by_layer,
             entry_point: index_pack.entry_point,
             nodes: HashMap::new(),
-            level_generator: LevelGenerator{
-                level_scale: index_pack.level_scale
-            }
+            level_generator: LevelGenerator {
+                level_scale: index_pack.level_scale,
+            },
         };
 
         // restore nodes hashmap
@@ -131,14 +141,13 @@ impl HnswIndex {
             hnsw_index_restored.nodes.insert(i.id, i);
         }
 
-
         let hnsw = HnswIndex {
-            ef_construction : metadata.ef_construction,
+            ef_construction: metadata.ef_construction,
             data_dimension: metadata.data_dimension,
             ef: metadata.ef,
             cache: HashMap::new(),
             similarity: metadata.similarity,
-            index: hnsw_index_restored
+            index: hnsw_index_restored,
         };
 
         Ok(hnsw)

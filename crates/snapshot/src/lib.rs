@@ -15,7 +15,8 @@ use chrono::{DateTime, Local};
 use defs::DbError;
 use flate2::read::GzDecoder;
 use index::{
-    IndexSnapshot, IndexType, VectorIndex, flat::index::FlatIndex, hnsw::HnswIndex, kd_tree::index::KDTree
+    IndexSnapshot, IndexType, VectorIndex, flat::index::FlatIndex, hnsw::HnswIndex,
+    kd_tree::index::KDTree,
 };
 use semver::Version;
 use std::{
