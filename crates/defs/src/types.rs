@@ -47,7 +47,7 @@ pub struct IndexedVector {
     pub vector: DenseVector,
 }
 
-#[derive(Debug, Deserialize, Copy, Clone)]
+#[derive(Debug, Serialize , Deserialize, Copy, Clone)]
 pub enum Similarity {
     Euclidean,
     Manhattan,

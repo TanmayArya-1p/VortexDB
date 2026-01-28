@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use defs::PointId;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 // Compact storage for layered points and adjacency used by `HnswIndex`.
 pub struct PointIndexation {
@@ -22,6 +23,7 @@ pub struct PointIndexation {
 }
 
 // Node with highest level and per-level neighbor lists
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Node {
     pub id: PointId,
     // Highest level (0-based; level 0 is the base layer)

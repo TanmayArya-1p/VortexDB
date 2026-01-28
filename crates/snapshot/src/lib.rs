@@ -15,7 +15,7 @@ use chrono::{DateTime, Local};
 use defs::DbError;
 use flate2::read::GzDecoder;
 use index::{
-    IndexSnapshot, IndexType, VectorIndex, flat::index::FlatIndex, kd_tree::index::KDTree,
+    IndexSnapshot, IndexType, VectorIndex, flat::index::FlatIndex, hnsw::HnswIndex, kd_tree::index::KDTree
 };
 use semver::Version;
 use std::{
@@ -281,6 +281,7 @@ impl Snapshot {
         let vector_index: Arc<RwLock<dyn VectorIndex>> = match manifest.index_type {
             IndexType::Flat => Arc::new(RwLock::new(FlatIndex::deserialize(&index_snapshot)?)),
             IndexType::KDTree => Arc::new(RwLock::new(KDTree::deserialize(&index_snapshot)?)),
+            IndexType::HNSW => Arc::new(RwLock::new(HnswIndex::deserialize(&index_snapshot)?)),
             _ => return Err(DbError::SnapshotError("Unsupported index type".to_string())),
         };
 

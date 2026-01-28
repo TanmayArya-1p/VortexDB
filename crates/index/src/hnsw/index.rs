@@ -19,7 +19,7 @@ pub struct HnswIndex {
     // Default query beam width (ef); recommended ef ≥ k at query time
     pub ef: usize,
     // In-memory vector cache owned by the index
-    cache: HashMap<PointId, DenseVector>,
+    pub cache: HashMap<PointId, DenseVector>,
     // Fixed metric for this index; used consistently in insert and search
     pub similarity: Similarity,
 }

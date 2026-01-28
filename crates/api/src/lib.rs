@@ -253,7 +253,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let config = DbConfig {
             storage_type: StorageType::RocksDb,
-            index_type: IndexType::Flat,
+            index_type: IndexType::HNSW,
             data_path: temp_dir.path().to_path_buf(),
             dimension: 3,
             similarity: Similarity::Cosine,
