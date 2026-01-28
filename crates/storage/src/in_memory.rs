@@ -1,6 +1,10 @@
 use crate::error::StorageError;
-use crate::{StorageEngine, VectorPage};
-use defs::{DenseVector, Payload, PointId};
+use crate::StorageType;
+use crate::{StorageEngine, VectorPage, checkpoint::StorageCheckpoint};
+use defs::{DbError, DenseVector, Payload, PointId};
+use std::path::{Path, PathBuf};
+
+pub const INMEMORY_CHECKPOINT_FILENAME_MARKER: &str = "inmemory";
 
 pub struct MemoryStorage {
     // define here how MemoryStorage will be defined
@@ -45,5 +49,16 @@ impl StorageEngine for MemoryStorage {
         _limit: usize,
     ) -> Result<Option<VectorPage>, StorageError> {
         Ok(None)
+    }
+
+    fn checkpoint_at(&self, _path: &Path) -> Result<StorageCheckpoint, DbError> {
+        Ok(StorageCheckpoint {
+            path: PathBuf::default(),
+            storage_type: StorageType::InMemory,
+        })
+    }
+
+    fn restore_checkpoint(&mut self, _checkpoint: &StorageCheckpoint) -> Result<(), DbError> {
+        Ok(())
     }
 }

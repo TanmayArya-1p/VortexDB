@@ -9,7 +9,10 @@ license.workspace = true
 [dependencies]
 bincode.workspace = true
 defs.workspace = true
+flate2 = "1.1.5"
 rocksdb.workspace = true
 snafu.workspace = true
+serde.workspace = true
+tar = "0.4.44"
 tempfile.workspace = true
 uuid.workspace = true

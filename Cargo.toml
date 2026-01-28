@@ -8,6 +8,7 @@ members = [
     "crates/http",
     "crates/tui",
     "crates/grpc",
+    "crates/snapshot",
 ]
 
 [workspace.package]
@@ -52,4 +53,5 @@ http = { path = "crates/http" }
 index = { path = "crates/index" }
 server = { path = "crates/server" }
 storage = { path = "crates/storage" }
+snapshot = { path = "crates/snapshot" }
 tui = { path = "crates/tui" }

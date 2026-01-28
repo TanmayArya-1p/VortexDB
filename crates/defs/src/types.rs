@@ -15,6 +15,8 @@ pub type Dimension = usize;
 // Sparse vector implementation not supported yet. Refer lib/sparse/src/common/sparse_vector.rs
 pub type DenseVector = Vec<Element>;
 
+pub type Magic = [u8; 4];
+
 pub enum StoredVector {
     Dense(DenseVector),
 }

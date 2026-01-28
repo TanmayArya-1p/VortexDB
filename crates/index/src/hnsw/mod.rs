@@ -3,6 +3,7 @@
 
 pub mod index;
 pub mod search;
+pub mod serialize;
 pub mod types;
 
 pub use index::HnswIndex;

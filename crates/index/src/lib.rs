@@ -1,13 +1,21 @@
-use defs::{DenseVector, IndexedVector, PointId, Similarity};
+use defs::{DbError, DenseVector, IndexedVector, Magic, PointId, Similarity};
 pub use error::{IndexError, Result};
 
 pub mod error;
+
+use serde::{Deserialize, Serialize};
+use storage::StorageEngine;
 pub mod flat;
 pub mod hnsw;
 pub mod kd_tree;
 
+<<<<<<< HEAD
 pub trait VectorIndex: Send + Sync {
     fn insert(&mut self, vector: IndexedVector) -> Result<()>;
+=======
+pub trait VectorIndex: Send + Sync + SerializableIndex {
+    fn insert(&mut self, vector: IndexedVector) -> Result<(), DbError>;
+>>>>>>> f9b5ae2 (add(snapshots): implement index snapshots for kd tree and flat index)
 
     // Returns true if point id existed and is deleted, else returns false
     fn delete(&mut self, point_id: PointId) -> Result<bool>;
@@ -57,9 +65,25 @@ pub fn distance(a: &[f32], b: &[f32], dist_type: Similarity) -> f32 {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum IndexType {
     Flat,
     KDTree,
     HNSW,
+}
+
+pub struct IndexSnapshot {
+    pub index_type: IndexType,
+    pub magic: Magic,
+    pub topology_b: Vec<u8>,
+    pub metadata_b: Vec<u8>,
+}
+
+pub trait SerializableIndex {
+    fn serialize_topology(&self) -> Result<Vec<u8>, DbError>;
+    fn serialize_metadata(&self) -> Result<Vec<u8>, DbError>;
+
+    fn snapshot(&self) -> Result<IndexSnapshot, DbError>;
+
+    fn populate_vectors(&mut self, storage: &dyn StorageEngine) -> Result<(), DbError>;
 }

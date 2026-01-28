@@ -1,6 +1,6 @@
 use super::*;
 use crate::VectorIndex;
-use crate::flat::FlatIndex;
+use crate::flat::index::FlatIndex;
 use defs::{IndexedVector, Similarity};
 use uuid::Uuid;
 
