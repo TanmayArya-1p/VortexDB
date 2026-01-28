@@ -283,7 +283,6 @@ impl Snapshot {
             IndexType::Flat => Arc::new(RwLock::new(FlatIndex::deserialize(&index_snapshot)?)),
             IndexType::KDTree => Arc::new(RwLock::new(KDTree::deserialize(&index_snapshot)?)),
             IndexType::HNSW => Arc::new(RwLock::new(HnswIndex::deserialize(&index_snapshot)?)),
-            _ => return Err(DbError::SnapshotError("Unsupported index type".to_string())),
         };
 
         vector_index

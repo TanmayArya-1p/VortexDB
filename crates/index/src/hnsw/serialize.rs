@@ -12,7 +12,6 @@ use crate::{
     },
 };
 
-#[repr(packed)]
 #[derive(Serialize, Deserialize)]
 pub struct HnswMetadataPack {
     pub ef_construction: usize,
@@ -51,7 +50,7 @@ impl SerializableIndex for HnswIndex {
             .map_err(|e| DbError::SerializationError(e.to_string()))?;
         buffer.extend(index_bytes);
 
-        return Ok(buffer);
+        Ok(buffer)
     }
 
     fn serialize_metadata(&self) -> Result<Vec<u8>, DbError> {
@@ -66,7 +65,7 @@ impl SerializableIndex for HnswIndex {
         let metadata_bytes = bincode::serialize(&index_pack)
             .map_err(|e| DbError::SerializationError(e.to_string()))?;
         buffer.extend(metadata_bytes);
-        return Ok(buffer);
+        Ok(buffer)
     }
 
     fn snapshot(&self) -> Result<IndexSnapshot, DbError> {

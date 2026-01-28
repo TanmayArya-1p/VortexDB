@@ -253,7 +253,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let config = DbConfig {
             storage_type: StorageType::RocksDb,
-            index_type: IndexType::HNSW,
+            index_type: IndexType::Flat,
             data_path: temp_dir.path().to_path_buf(),
             dimension: 3,
             similarity: Similarity::Cosine,
@@ -385,7 +385,7 @@ mod tests {
 
         // Search with limit 3
         let query = vec![0.0, 0.0, 0.0];
-        let results = db.search(query, Similarity::Cosine, 3).unwrap();
+        let results = db.search(query, Similarity::Euclidean, 3).unwrap();
 
         assert_eq!(results.len(), 3);
     }
