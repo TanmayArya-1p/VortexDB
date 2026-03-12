@@ -1,11 +1,10 @@
+use defs::{DbError, SnapshottableDb};
 use std::{
     collections::VecDeque,
     sync::{Arc, Condvar, Mutex},
-    time::Duration,
+    thread::JoinHandle,
 };
-
-use defs::{DbError, SnapshottableDb};
-
+mod worker;
 use crate::{metadata::Metadata, registry::SnapshotRegistry};
 
 pub struct SnapshotEngine {
@@ -13,9 +12,25 @@ pub struct SnapshotEngine {
     snapshot_queue: Arc<Mutex<VecDeque<Metadata>>>,
     db: Arc<Mutex<dyn SnapshottableDb>>,
     registry: Arc<Mutex<dyn SnapshotRegistry>>,
+    worker_ctx: WorkerContext,
+}
+
+pub struct WorkerContext {
     worker_cv: Arc<Condvar>,
     worker_running: Arc<Mutex<bool>>,
+    join_handle: Option<JoinHandle<Result<(), DbError>>>,
 }
+
+impl WorkerContext {
+    fn new() -> WorkerContext {
+        WorkerContext {
+            worker_cv: Arc::new(Condvar::new()),
+            worker_running: Arc::new(Mutex::new(false)),
+            join_handle: None,
+        }
+    }
+}
+
 impl SnapshotEngine {
     pub fn new(
         last_k: usize,
@@ -27,35 +42,8 @@ impl SnapshotEngine {
             snapshot_queue: Arc::new(Mutex::new(VecDeque::new())),
             db,
             registry,
-            worker_cv: Arc::new(Condvar::new()),
-            worker_running: Arc::new(Mutex::new(false)),
+            worker_ctx: WorkerContext::new(),
         }
-    }
-
-    pub fn stop_worker(&mut self) -> Result<(), DbError> {
-        // acquire lock for worker_running
-        let mut worker_running = self.worker_running.lock().map_err(|_| DbError::LockError)?;
-        if !*worker_running {
-            return Err(DbError::SnapshotEngineError(
-                "Worker thread not running".to_string(),
-            ));
-        }
-        *worker_running = false;
-        self.worker_cv.notify_one();
-        Ok(())
-    }
-
-    // notify the worker thread to take a snapshot now
-    pub fn worker_snapshot(&mut self) -> Result<(), DbError> {
-        // acquire lock for worker_running
-        let worker_running = self.worker_running.lock().map_err(|_| DbError::LockError)?;
-        if !*worker_running {
-            return Err(DbError::SnapshotEngineError(
-                "Worker thread not running".to_string(),
-            ));
-        }
-        self.worker_cv.notify_one();
-        Ok(())
     }
 
     // take a snapshot on the callers thread
@@ -76,38 +64,6 @@ impl SnapshotEngine {
             .iter()
             .cloned()
             .collect())
-    }
-
-    pub fn start_worker(&mut self, interval: i64) -> Result<(), DbError> {
-        // acquire lock for worker_running
-        let mut worker_running = self.worker_running.lock().map_err(|_| DbError::LockError)?;
-        if *worker_running {
-            return Err(DbError::SnapshotEngineError(
-                "Worker thread already running".to_string(),
-            ));
-        }
-        *worker_running = true;
-
-        let worker_running_clone = Arc::clone(&self.worker_running);
-        let db_clone = Arc::clone(&self.db);
-        let registry_clone = Arc::clone(&self.registry);
-        let worker_cv_clone = Arc::clone(&self.worker_cv);
-        let snapshot_queue_clone = Arc::clone(&self.snapshot_queue);
-        let last_k_clone = self.last_k;
-
-        let dur_interval = Duration::from_secs(interval as u64);
-        let _ = std::thread::spawn(move || {
-            Self::worker(
-                dur_interval,
-                last_k_clone,
-                worker_running_clone,
-                db_clone,
-                registry_clone,
-                worker_cv_clone,
-                snapshot_queue_clone,
-            );
-        });
-        Ok(())
     }
 
     // helper function to take snapshot
@@ -165,28 +121,5 @@ impl SnapshotEngine {
             // drop queue lock
         }
         Ok(())
-    }
-
-    // TODO: fix sync issues if any (i dont think there are any)
-    fn worker(
-        interval: Duration,
-        last_k: usize,
-        worker_running: Arc<Mutex<bool>>,
-        mut db: Arc<Mutex<dyn SnapshottableDb>>,
-        mut registry: Arc<Mutex<dyn SnapshotRegistry>>,
-        worker_cv: Arc<Condvar>,
-        mut snapshot_queue: Arc<Mutex<VecDeque<Metadata>>>,
-    ) {
-        loop {
-            // acquire the lock and exit if its false
-            let worker_running = worker_running.lock().unwrap();
-            if !*worker_running {
-                break;
-            }
-
-            Self::take_snapshot(&mut db, &mut registry, &mut snapshot_queue, last_k).unwrap();
-
-            let _ = worker_cv.wait_timeout(worker_running, interval).unwrap();
-        }
     }
 }
