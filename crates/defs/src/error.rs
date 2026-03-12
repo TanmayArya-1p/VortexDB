@@ -18,7 +18,7 @@ pub enum DbError {
     InvalidMagicBytes(String),
     VectorNotFound(uuid::Uuid),
     SnapshotRegistryError(String),
-    StorageEngineError(String),
+    SnapshotEngineError(String),
     InvalidDimension { expected: Dimension, got: Dimension },
     PointAlreadyExists { id: PointId },
     PointNotFound { id: PointId },

@@ -106,7 +106,9 @@ impl Snapshot {
                 "Storage checkpoint was not properly made".to_string(),
             ))?
             .to_str()
-            .unwrap()
+            .ok_or(DbError::SnapshotError(
+                "Storage checkpoint filename is not valid UTF-8".to_string(),
+            ))?
             .to_string();
 
         // create manifest file

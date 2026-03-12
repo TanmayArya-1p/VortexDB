@@ -1,7 +1,7 @@
 use data_encoding::HEXLOWER;
 use sha2::{Digest, Sha256};
 use std::fs::File;
-use std::io::{BufReader, Error, Read};
+use std::io::{BufReader, Error, ErrorKind, Read};
 use std::path::PathBuf;
 
 use defs::{DbError, Magic};
@@ -92,7 +92,10 @@ pub fn compress_archive(path: &Path, files: &[&Path]) -> Result<(), Error> {
     let mut tar = Builder::new(enc);
 
     for file in files {
-        let rel_path = file.file_name().unwrap();
+        let rel_path = file.file_name().ok_or(Error::new(
+            ErrorKind::InvalidFilename,
+            "Could not create archive : invalid snapshot file",
+        ))?;
         let mut f = File::open(file)?;
         tar.append_file(rel_path, &mut f)?;
     }

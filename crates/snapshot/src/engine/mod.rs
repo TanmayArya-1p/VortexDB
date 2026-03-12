@@ -36,7 +36,7 @@ impl SnapshotEngine {
         // acquire lock for worker_running
         let mut worker_running = self.worker_running.lock().map_err(|_| DbError::LockError)?;
         if !*worker_running {
-            return Err(DbError::StorageEngineError(
+            return Err(DbError::SnapshotEngineError(
                 "Worker thread not running".to_string(),
             ));
         }
@@ -50,7 +50,7 @@ impl SnapshotEngine {
         // acquire lock for worker_running
         let worker_running = self.worker_running.lock().map_err(|_| DbError::LockError)?;
         if !*worker_running {
-            return Err(DbError::StorageEngineError(
+            return Err(DbError::SnapshotEngineError(
                 "Worker thread not running".to_string(),
             ));
         }
@@ -82,7 +82,7 @@ impl SnapshotEngine {
         // acquire lock for worker_running
         let mut worker_running = self.worker_running.lock().map_err(|_| DbError::LockError)?;
         if *worker_running {
-            return Err(DbError::StorageEngineError(
+            return Err(DbError::SnapshotEngineError(
                 "Worker thread already running".to_string(),
             ));
         }
@@ -119,25 +119,48 @@ impl SnapshotEngine {
     ) -> Result<(), DbError> {
         let snapshot_path = db
             .lock()
-            .unwrap()
-            .create_snapshot(registry.lock().unwrap().dir().as_path())
-            .unwrap();
-        let snapshot_metadata = Metadata::parse(&snapshot_path).unwrap();
+            .map_err(|_| DbError::LockError)?
+            .create_snapshot(
+                registry
+                    .lock()
+                    .map_err(|_| DbError::LockError)?
+                    .dir()
+                    .as_path(),
+            )
+            .map_err(|err| {
+                DbError::SnapshotEngineError(format!("Could not create snapshot : {}", err))
+            })?;
+        let snapshot_metadata = Metadata::parse(&snapshot_path).map_err(|err| {
+            DbError::SnapshotEngineError(format!("Could not parse snapshot metadata: {}", err))
+        })?;
 
         // add the snapshot to registry
         registry
             .lock()
-            .unwrap()
+            .map_err(|_| DbError::LockError)?
             .add_snapshot(&snapshot_path)
-            .unwrap();
+            .map_err(|err| {
+                DbError::SnapshotEngineError(format!("Could not add snapshot to registry: {}", err))
+            })?;
 
         {
-            let mut queue = snapshot_queue.lock().unwrap();
+            let mut queue = snapshot_queue.lock().map_err(|_| DbError::LockError)?;
             queue.push_back(snapshot_metadata);
 
             while queue.len() > last_k {
-                let old = queue.pop_front().unwrap();
-                registry.lock().unwrap().mark_dead(old.small_id).unwrap();
+                let old = queue.pop_front().ok_or_else(|| {
+                    DbError::SnapshotEngineError("Snapshot metadata queue is empty".to_string())
+                })?;
+                registry
+                    .lock()
+                    .map_err(|_| DbError::LockError)?
+                    .mark_dead(old.small_id)
+                    .map_err(|err| {
+                        DbError::SnapshotEngineError(format!(
+                            "Could not mark snapshot as dead in registry: {}",
+                            err
+                        ))
+                    })?;
             }
             // drop queue lock
         }
@@ -156,10 +179,7 @@ impl SnapshotEngine {
     ) {
         loop {
             // acquire the lock and exit if its false
-            let worker_running = worker_running
-                .lock()
-                .map_err(|_| DbError::LockError)
-                .unwrap();
+            let worker_running = worker_running.lock().unwrap();
             if !*worker_running {
                 break;
             }
