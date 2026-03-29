@@ -120,6 +120,21 @@ impl From<storage::error::StorageError> for GrpcError {
             StorageError::Deserialization { id, source: _ } => GrpcError::Internal {
                 message: format!("failed to deserialize point {}", id),
             },
+            StorageError::RocksDbInitialization {} => GrpcError::Internal {
+                message: "failed to initialize storage".to_string(),
+            },
+            StorageError::RocksDbCheckpointMsg { msg } => GrpcError::Internal {
+                message: format!("checkpoint error: {}", msg),
+            },
+            StorageError::RocksDbCheckpointIo { msg, source: _ } => GrpcError::Internal {
+                message: format!("checkpoint io error: {}", msg),
+            },
+            StorageError::RocksDbCheckpoint { source: _ } => GrpcError::Internal {
+                message: "checkpoint error".to_string(),
+            },
+            StorageError::RocksDbFlush { source: _ } => GrpcError::Internal {
+                message: "flush error".to_string(),
+            },
         }
     }
 }

@@ -170,7 +170,9 @@ impl SnapshottableDb for VectorDb {
             .snapshot()?;
 
         let tempdir = tempdir().unwrap();
-        let storage_checkpoint = self.storage.checkpoint_at(tempdir.path())?;
+        let storage_checkpoint = self.storage.checkpoint_at(tempdir.path()).map_err(|e| {
+            DbError::StorageCheckpointError(format!("Could not create storage checkpoint: {e}"))
+        })?;
 
         let snapshot = Snapshot::new(index_snapshot, storage_checkpoint, self.dimension)?;
         let snapshot_path = snapshot.save(dir_path)?;

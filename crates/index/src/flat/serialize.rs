@@ -88,8 +88,16 @@ impl SerializableIndex for FlatIndex {
     fn populate_vectors(&mut self, storage: &dyn StorageEngine) -> Result<(), DbError> {
         for item in &mut self.index {
             item.vector = storage
-                .get_vector(item.id)?
-                .ok_or(DbError::VectorNotFound(item.id))?;
+                .get_vector(item.id)
+                .map_err(|e| {
+                    DbError::SerializationError(format!("Could not get vector from storage: {e}"))
+                })?
+                .ok_or_else(|| {
+                    DbError::SerializationError(format!(
+                        "Failed to locate vector for id: {}",
+                        item.id
+                    ))
+                })?;
         }
         Ok(())
     }

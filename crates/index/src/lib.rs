@@ -9,13 +9,8 @@ pub mod flat;
 pub mod hnsw;
 pub mod kd_tree;
 
-<<<<<<< HEAD
-pub trait VectorIndex: Send + Sync {
-    fn insert(&mut self, vector: IndexedVector) -> Result<()>;
-=======
 pub trait VectorIndex: Send + Sync + SerializableIndex {
-    fn insert(&mut self, vector: IndexedVector) -> Result<(), DbError>;
->>>>>>> f9b5ae2 (add(snapshots): implement index snapshots for kd tree and flat index)
+    fn insert(&mut self, vector: IndexedVector) -> Result<()>;
 
     // Returns true if point id existed and is deleted, else returns false
     fn delete(&mut self, point_id: PointId) -> Result<bool>;

@@ -143,8 +143,16 @@ fn populate_vectors_recursive(
 ) -> Result<(), DbError> {
     if let Some(node) = node {
         let vector = storage
-            .get_vector(node.indexed_vector.id)?
-            .ok_or(DbError::VectorNotFound(node.indexed_vector.id))?;
+            .get_vector(node.indexed_vector.id)
+            .map_err(|e| {
+                DbError::SerializationError(format!("Could not get vector from storage: {e}"))
+            })?
+            .ok_or_else(|| {
+                DbError::SerializationError(format!(
+                    "Failed to locate vector for id: {}",
+                    node.indexed_vector.id
+                ))
+            })?;
         node.indexed_vector.vector = vector;
 
         populate_vectors_recursive(&mut node.left, storage)?;

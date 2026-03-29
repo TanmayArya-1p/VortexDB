@@ -10,6 +10,21 @@ pub enum StorageError {
         source: rocksdb::Error,
     },
 
+    #[snafu(display("Failed to intialize rocksdb"))]
+    RocksDbInitialization {},
+
+    #[snafu(display("Storage checkpoint error: {}", msg))]
+    RocksDbCheckpointMsg { msg: String },
+
+    #[snafu(display("{} : {}", msg, source))]
+    RocksDbCheckpointIo { msg: String, source: std::io::Error },
+
+    #[snafu(display("Failed to open rocksdb checkpoint: {source}"))]
+    RocksDbCheckpoint { source: rocksdb::Error },
+
+    #[snafu(display("Failed to flush database: {source}"))]
+    RocksDbFlush { source: rocksdb::Error },
+
     #[snafu(display("Failed to read point {id} from storage: {source}"))]
     RocksDbRead { id: PointId, source: rocksdb::Error },
 

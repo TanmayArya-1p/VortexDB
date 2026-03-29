@@ -203,7 +203,10 @@ impl Snapshot {
 
         // only rocksdb is supported for snapshots as of now
         let mut storage_engine: Box<dyn StorageEngine> = match manifest.storage_type {
-            StorageType::RocksDb => Box::new(RocksDbStorage::new(storage_data_path)?),
+            StorageType::RocksDb => Box::new(
+                RocksDbStorage::new(storage_data_path)
+                    .map_err(|e| DbError::StorageError(format!("Could not open storage: {e}")))?,
+            ),
             _ => {
                 return Err(DbError::SnapshotError(
                     "Unsupported storage type".to_string(),
@@ -271,7 +274,11 @@ impl Snapshot {
             ));
         }
 
-        storage_engine.restore_checkpoint(&storage_checkpoint)?;
+        storage_engine
+            .restore_checkpoint(&storage_checkpoint)
+            .map_err(|e| {
+                DbError::StorageCheckpointError(format!("Could not restore checkpoint: {e}"))
+            })?;
 
         let index_snapshot = IndexSnapshot {
             index_type: manifest.index_type,

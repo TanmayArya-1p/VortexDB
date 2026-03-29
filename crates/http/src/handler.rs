@@ -126,7 +126,12 @@ fn api_error_to_response(err: &ApiError) -> (StatusCode, String) {
             | StorageError::RocksDbDelete { .. }
             | StorageError::RocksDbIteration { .. }
             | StorageError::Serialization { .. }
-            | StorageError::Deserialization { .. } => {
+            | StorageError::Deserialization { .. }
+            | StorageError::RocksDbCheckpoint { .. }
+            | StorageError::RocksDbFlush { .. }
+            | StorageError::RocksDbInitialization { .. }
+            | StorageError::RocksDbCheckpointMsg { .. }
+            | StorageError::RocksDbCheckpointIo { .. } => {
                 (StatusCode::INTERNAL_SERVER_ERROR, source.to_string())
             }
         },

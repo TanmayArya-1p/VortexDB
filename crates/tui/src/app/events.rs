@@ -121,11 +121,9 @@ fn handle_modal_navigation(app: &mut App, key: KeyEvent) -> io::Result<()> {
             Some(ModalType::DatabaseList) | Some(ModalType::DeleteDatabase) => {
                 app.select_previous();
             }
-            Some(ModalType::ListVectors) => {
-                if app.modal.selected_index() > 0 {
-                    app.modal.select_previous();
-                    app.vector_list_selected_index = app.modal.selected_index();
-                }
+            Some(ModalType::ListVectors) if app.modal.selected_index() > 0 => {
+                app.modal.select_previous();
+                app.vector_list_selected_index = app.modal.selected_index();
             }
             Some(ModalType::ConfirmDeleteDatabase) => {
                 app.modal.set_selected_index(0, 2);

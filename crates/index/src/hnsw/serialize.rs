@@ -83,11 +83,13 @@ impl SerializableIndex for HnswIndex {
         // assumes index topology is restored
         for id in self.index.nodes.keys() {
             let vec = storage
-                .get_vector(*id)?
-                .ok_or(DbError::SerializationError(format!(
-                    "Failed to locate vector for id: {} in storage",
-                    id
-                )))?;
+                .get_vector(*id)
+                .map_err(|e| {
+                    DbError::SerializationError(format!("Could not get vector from storage: {e}"))
+                })?
+                .ok_or_else(|| {
+                    DbError::SerializationError(format!("Failed to locate vector for id: {id}"))
+                })?;
             self.cache.insert(*id, vec);
         }
         Ok(())

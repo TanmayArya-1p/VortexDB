@@ -32,7 +32,7 @@ impl SnapshotEngine {
                     DbError::SnapshotEngineError("Could not join worker thread".to_string())
                 })?
                 .map_err(|e| {
-                    DbError::SnapshotEngineError(format!("Worker thread errored: {}", e))
+                    DbError::SnapshotEngineError(format!("Worker thread errored: {:?}", e))
                 })?;
         }
         Ok(())

@@ -4,7 +4,7 @@ use crate::SerializableIndex;
 use crate::VectorIndex;
 use crate::distance;
 use crate::flat::index::FlatIndex;
-use defs::{DbError, IndexedVector, Similarity};
+use defs::{IndexedVector, Similarity};
 
 use std::collections::HashSet;
 use uuid::Uuid;

@@ -1,5 +1,5 @@
-use crate::{VectorIndex, distance};
-use defs::{DbError, DenseVector, DistanceOrderedVector, IndexedVector, PointId, Similarity};
+use crate::{IndexError, VectorIndex, distance};
+use defs::{DenseVector, DistanceOrderedVector, IndexedVector, PointId, Similarity};
 
 pub struct FlatIndex {
     pub index: Vec<IndexedVector>,
@@ -22,12 +22,12 @@ impl Default for FlatIndex {
 }
 
 impl VectorIndex for FlatIndex {
-    fn insert(&mut self, vector: IndexedVector) -> Result<(), DbError> {
+    fn insert(&mut self, vector: IndexedVector) -> Result<(), IndexError> {
         self.index.push(vector);
         Ok(())
     }
 
-    fn delete(&mut self, point_id: PointId) -> Result<bool, DbError> {
+    fn delete(&mut self, point_id: PointId) -> Result<bool, IndexError> {
         if let Some(pos) = self.index.iter().position(|vector| vector.id == point_id) {
             self.index.remove(pos);
             Ok(true)
@@ -41,7 +41,7 @@ impl VectorIndex for FlatIndex {
         query_vector: DenseVector,
         similarity: Similarity,
         k: usize,
-    ) -> Result<Vec<PointId>, DbError> {
+    ) -> Result<Vec<PointId>, IndexError> {
         let scores = self
             .index
             .iter()

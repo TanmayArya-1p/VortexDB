@@ -1,12 +1,20 @@
 // Rewrite needed
 
-use crate::error::{self, StorageError};
-use crate::{StorageEngine, VectorPage};
+use crate::checkpoint::StorageCheckpoint;
+use crate::error::{
+    self, RocksDbCheckpointIoSnafu, RocksDbCheckpointMsgSnafu, RocksDbCheckpointSnafu,
+    RocksDbFlushSnafu, RocksDbInitializationSnafu, StorageError,
+};
+use crate::{StorageEngine, StorageType, VectorPage};
 use bincode::{deserialize, serialize};
 use defs::{DenseVector, Payload, Point, PointId};
-use rocksdb::{DB, Options};
-use snafu::ResultExt;
-use std::path::PathBuf;
+use flate2::{Compression, read::GzDecoder, write::GzEncoder};
+use rocksdb::{DB, Error, Options};
+use snafu::{OptionExt, ResultExt};
+use std::fs::File;
+use std::path::{Path, PathBuf};
+use tar::{Archive, Builder};
+use tempfile::tempdir;
 
 //TODO: Implement RocksDbStorage with necessary fields and implementations
 //TODO: Optimize the basic design
@@ -33,7 +41,7 @@ impl RocksDbStorage {
         })
     }
 
-    fn initialize_db(path: &Path) -> Result<DB, DbError> {
+    fn initialize_db(path: &Path) -> Result<DB, StorageError> {
         // Initialize a db at the given location
         let mut options = Options::default();
 
@@ -43,16 +51,11 @@ impl RocksDbStorage {
 
         options.create_if_missing(true);
 
-        let converted_path = path.into();
-        let path_str = converted_path.display().to_string();
-
-        let db = DB::open(&options, converted_path.clone())
-            .context(error::RocksDbOpenSnafu { path: path_str })?;
-
-        Ok(RocksDbStorage {
-            path: converted_path,
-            db,
-        })
+        let db = DB::open(&options, path).map_err(|e| StorageError::RocksDbOpen {
+            path: path.to_string_lossy().into_owned(),
+            source: e,
+        })?;
+        Ok(db)
     }
 
     pub fn get_current_path(&self) -> PathBuf {
@@ -76,6 +79,8 @@ impl StorageEngine for RocksDbStorage {
         let value = serialize(&point).context(error::SerializationSnafu { id })?;
 
         self.db
+            .as_ref()
+            .context(error::RocksDbInitializationSnafu {})?
             .put(key.as_bytes(), value.as_slice())
             .context(error::RocksDbWriteSnafu { id })?;
 
@@ -88,13 +93,13 @@ impl StorageEngine for RocksDbStorage {
         if self
             .db
             .as_ref()
-            .ok_or(DbError::StorageInitializationError)?
+            .context(error::RocksDbInitializationSnafu {})?
             .key_may_exist(key.clone())
         {
             let key_exist = self
                 .db
                 .as_ref()
-                .ok_or(DbError::StorageInitializationError)?
+                .context(error::RocksDbInitializationSnafu {})?
                 .get(key)
                 .context(error::RocksDbReadSnafu { id })?
                 .is_some();
@@ -108,7 +113,7 @@ impl StorageEngine for RocksDbStorage {
         let key = id.to_string();
         self.db
             .as_ref()
-            .ok_or(DbError::StorageInitializationError)?
+            .context(error::RocksDbInitializationSnafu {})?
             .delete(key)
             .context(error::RocksDbDeleteSnafu { id })?;
 
@@ -117,7 +122,12 @@ impl StorageEngine for RocksDbStorage {
 
     fn get_payload(&self, id: PointId) -> Result<Option<Payload>, StorageError> {
         let key = id.to_string();
-        let Some(value_serialized) = self.db.get(key).context(error::RocksDbReadSnafu { id })?
+        let Some(value_serialized) = self
+            .db
+            .as_ref()
+            .ok_or(StorageError::RocksDbInitialization {})?
+            .get(key)
+            .context(error::RocksDbReadSnafu { id })?
         else {
             return Ok(None); // This should not return error but rather give None
         };
@@ -130,7 +140,12 @@ impl StorageEngine for RocksDbStorage {
 
     fn get_vector(&self, id: PointId) -> Result<Option<DenseVector>, StorageError> {
         let key = id.to_string();
-        let Some(value_serialized) = self.db.get(key).context(error::RocksDbReadSnafu { id })?
+        let Some(value_serialized) = self
+            .db
+            .as_ref()
+            .ok_or(StorageError::RocksDbInitialization {})?
+            .get(key)
+            .context(error::RocksDbReadSnafu { id })?
         else {
             return Ok(None); // This should not return error but rather give None
         };
@@ -154,7 +169,7 @@ impl StorageEngine for RocksDbStorage {
         let iter = self
             .db
             .as_ref()
-            .ok_or(DbError::StorageInitializationError)?
+            .context(error::RocksDbInitializationSnafu {})?
             .iterator(rocksdb::IteratorMode::From(
                 offset.to_string().as_bytes(),
                 rocksdb::Direction::Forward,
@@ -181,18 +196,13 @@ impl StorageEngine for RocksDbStorage {
         Ok(Some((result, last_id)))
     }
 
-    fn checkpoint_at(&self, path: &Path) -> Result<StorageCheckpoint, DbError> {
+    fn checkpoint_at(&self, path: &Path) -> Result<StorageCheckpoint, StorageError> {
         // flush db first for durability
         self.db
             .as_ref()
-            .ok_or(DbError::StorageInitializationError)?
+            .ok_or(StorageError::RocksDbInitialization {})?
             .flush()
-            .map_err(|e| {
-                DbError::StorageCheckpointError(format!(
-                    "Failed to flush database: {}",
-                    e.into_string()
-                ))
-            })?;
+            .context(RocksDbFlushSnafu)?;
 
         // filename is rocksdb-{uuid}.tar.gz
         let checkpoint_filename = format!(
@@ -208,30 +218,36 @@ impl StorageEngine for RocksDbStorage {
         let db_ref = self
             .db
             .as_ref()
-            .ok_or(DbError::StorageInitializationError)?;
-        let checkpoint = rocksdb::checkpoint::Checkpoint::new(db_ref)
-            .map_err(|e| DbError::StorageCheckpointError(e.into_string()))?;
+            .ok_or(StorageError::RocksDbInitialization {})?;
+
+        let checkpoint =
+            rocksdb::checkpoint::Checkpoint::new(db_ref).context(RocksDbCheckpointSnafu)?;
         checkpoint
             .create_checkpoint(temp_dir.clone())
-            .map_err(|e| DbError::StorageCheckpointError(e.into_string()))?;
+            .context(RocksDbCheckpointSnafu)?;
 
         // compress the checkpoint into an archive
-        let tar_gz = File::create(checkpoint_path.clone()).map_err(|e| {
-            DbError::StorageCheckpointError(format!("Couldn't create tar archive file: {}", e))
-        })?;
+        let tar_gz =
+            File::create(checkpoint_path.clone()).with_context(|e| RocksDbCheckpointIoSnafu {
+                msg: format!("Couldn't create tar.gz archive: {}", e),
+            })?;
         let enc = GzEncoder::new(tar_gz, Compression::default());
         let mut archive = Builder::new(enc);
 
-        archive.append_dir_all("", temp_dir).map_err(|e| {
-            DbError::StorageCheckpointError(format!("Couldn't append directory to archive: {}", e))
-        })?;
+        archive
+            .append_dir_all("", temp_dir)
+            .with_context(|e| RocksDbCheckpointIoSnafu {
+                msg: format!("Couldn't append directory to archive: {}", e),
+            })?;
 
-        let enc = archive.into_inner().map_err(|e| {
-            DbError::StorageCheckpointError(format!("Couldn't compress tar archive: {}", e))
-        })?;
+        let enc = archive
+            .into_inner()
+            .with_context(|e| RocksDbCheckpointIoSnafu {
+                msg: format!("Couldn't compress tar.gz archive: {}", e),
+            })?;
 
-        enc.finish().map_err(|e| {
-            DbError::StorageCheckpointError(format!("Couldn't compress tar archive: {}", e))
+        enc.finish().with_context(|e| RocksDbCheckpointIoSnafu {
+            msg: format!("Couldn't compress tar.gz archive: {}", e),
         })?;
 
         Ok(StorageCheckpoint {
@@ -240,34 +256,35 @@ impl StorageEngine for RocksDbStorage {
         })
     }
 
-    fn restore_checkpoint(&mut self, checkpoint: &StorageCheckpoint) -> Result<(), DbError> {
+    fn restore_checkpoint(&mut self, checkpoint: &StorageCheckpoint) -> Result<(), StorageError> {
         // enforce storage type
         if checkpoint.storage_type != StorageType::RocksDb {
-            return Err(DbError::StorageCheckpointError(
-                "Invalid storage type".to_string(),
-            ));
+            return Err(StorageError::RocksDbCheckpointMsg {
+                msg: "Invalid storage type".to_string(),
+            });
         }
         // enforce filename marker - should have been enforced during StoraegCheckpoint::open anyway
         let checkpoint_filename = checkpoint
             .path
             .file_name()
-            .ok_or(DbError::StorageCheckpointError(
-                "Could not read checkpoint filename".to_string(),
-            ))?
+            .ok_or_else(|| StorageError::RocksDbCheckpointMsg {
+                msg: "Could not read checkpoint filename".to_string(),
+            })?
             .to_str()
-            .ok_or(DbError::StorageCheckpointError(
-                "Could not read checkpoint filename".to_string(),
-            ))?;
+            .ok_or_else(|| StorageError::RocksDbCheckpointMsg {
+                msg: "Checkpoint filename is not valid UTF-8".to_string(),
+            })?;
         if !checkpoint_filename.ends_with(".tar.gz")
             || !checkpoint_filename.starts_with(ROCKSDB_CHECKPOINT_FILENAME_MARKER)
         {
-            return Err(DbError::StorageCheckpointError(
-                "Invalid filename".to_string(),
-            ));
+            return RocksDbCheckpointMsgSnafu {
+                msg: "Invalid file name".to_string(),
+            }
+            .fail();
         }
 
-        let tar_gz = File::open(&checkpoint.path).map_err(|e| {
-            DbError::StorageCheckpointError(format!("Couldn't open rocksdb checkpoint: {}", e))
+        let tar_gz = File::open(&checkpoint.path).with_context(|e| RocksDbCheckpointIoSnafu {
+            msg: format!("Couldn't open checkpoint file: {}", e),
         })?;
         let tar = GzDecoder::new(tar_gz);
         let mut archive = Archive::new(tar);
@@ -275,23 +292,25 @@ impl StorageEngine for RocksDbStorage {
         // remove existing stuff in data path
         self.db
             .as_ref()
-            .ok_or(DbError::StorageInitializationError)?
+            .context(RocksDbInitializationSnafu)?
             .cancel_all_background_work(true);
         // drop db early
         self.db = None;
 
-        std::fs::remove_dir_all(&self.path).map_err(|e| {
-            DbError::StorageCheckpointError(format!("Couldn't remove existing data: {}", e))
+        std::fs::remove_dir_all(&self.path).with_context(|e| RocksDbCheckpointIoSnafu {
+            msg: format!("Couldn't remove existing data: {}", e),
         })?;
 
         // create new data path
-        std::fs::create_dir_all(&self.path).map_err(|e| {
-            DbError::StorageCheckpointError(format!("Couldn't create data path: {}", e))
+        std::fs::create_dir_all(&self.path).with_context(|e| RocksDbCheckpointIoSnafu {
+            msg: format!("Couldn't create data path: {}", e),
         })?;
 
-        archive.unpack(&self.path).map_err(|e| {
-            DbError::StorageCheckpointError(format!("Couldn't unpack tar.gz archive: {}", e))
-        })?;
+        archive
+            .unpack(&self.path)
+            .with_context(|e| RocksDbCheckpointIoSnafu {
+                msg: format!("Couldn't unpack tar.gz archive: {}", e),
+            })?;
 
         // reinitialize db
         self.db = Some(Self::initialize_db(&self.path)?);
@@ -428,6 +447,7 @@ mod tests {
             let debug_string = format!("{:?}", err);
             println!("Debug format: {}", debug_string);
         }
+    }
 
     #[test]
     fn test_create_and_load_checkpoint() {

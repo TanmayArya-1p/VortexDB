@@ -84,10 +84,10 @@ impl SnapshotEngine {
                     .as_path(),
             )
             .map_err(|err| {
-                DbError::SnapshotEngineError(format!("Could not create snapshot : {}", err))
+                DbError::SnapshotEngineError(format!("Could not create snapshot : {:?}", err))
             })?;
         let snapshot_metadata = Metadata::parse(&snapshot_path).map_err(|err| {
-            DbError::SnapshotEngineError(format!("Could not parse snapshot metadata: {}", err))
+            DbError::SnapshotEngineError(format!("Could not parse snapshot metadata: {:?}", err))
         })?;
 
         // add the snapshot to registry
@@ -96,7 +96,10 @@ impl SnapshotEngine {
             .map_err(|_| DbError::LockError)?
             .add_snapshot(&snapshot_path)
             .map_err(|err| {
-                DbError::SnapshotEngineError(format!("Could not add snapshot to registry: {}", err))
+                DbError::SnapshotEngineError(format!(
+                    "Could not add snapshot to registry: {:?}",
+                    err
+                ))
             })?;
 
         {
@@ -113,7 +116,7 @@ impl SnapshotEngine {
                     .mark_dead(old.small_id)
                     .map_err(|err| {
                         DbError::SnapshotEngineError(format!(
-                            "Could not mark snapshot as dead in registry: {}",
+                            "Could not mark snapshot as dead in registry: {:?}",
                             err
                         ))
                     })?;

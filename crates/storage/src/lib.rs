@@ -1,5 +1,5 @@
 use crate::rocks_db::RocksDbStorage;
-use defs::{DbError, DenseVector, Payload, PointId};
+use defs::{DenseVector, Payload, PointId};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -26,15 +26,9 @@ pub trait StorageEngine: Send + Sync {
     fn contains_point(&self, id: PointId) -> Result<bool>;
     fn list_vectors(&self, offset: PointId, limit: usize) -> Result<Option<VectorPage>>;
 
-    fn checkpoint_at(&self, path: &Path) -> Result<checkpoint::StorageCheckpoint, DbError>;
-    fn restore_checkpoint(
-        &mut self,
-        checkpoint: &checkpoint::StorageCheckpoint,
-    ) -> Result<(), DbError>;
+    fn checkpoint_at(&self, path: &Path) -> Result<checkpoint::StorageCheckpoint>;
+    fn restore_checkpoint(&mut self, checkpoint: &checkpoint::StorageCheckpoint) -> Result<()>;
 }
-
-pub mod in_memory;
-pub mod rocks_db;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub enum StorageType {
